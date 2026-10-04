@@ -40,11 +40,17 @@ export class HybridMemory {
     return record.type === 'event' ? [record] : Promise.all(record.children.map(child => this.read(child)));
   }
   compact(options: { maxWork?: number } = {}): Promise<CompactionResult> {
-    if (this.compacting) return this.compacting;
     const maxWork = options.maxWork ?? Number.MAX_SAFE_INTEGER;
     if (!Number.isSafeInteger(maxWork) || maxWork < 1) throw new Error('maxWork must be a positive integer');
-    this.compacting = this.drain(maxWork).finally(() => { this.compacting = undefined; });
-    return this.compacting;
+    if (!this.compacting) this.compacting = this.drain(maxWork).finally(() => { this.compacting = undefined; });
+    return this.compacting.then(async result => {
+      // An explicit unbounded compact must also finish work admitted during an existing bounded job.
+      if (options.maxWork === undefined && result.pending) {
+        const next = await this.compact();
+        return { createdNodes: result.createdNodes + next.createdNodes, embedded: result.embedded + next.embedded, pending: next.pending };
+      }
+      return result;
+    });
   }
   pending(): number {
     const events = this.store.events(), nodes = this.store.nodes(this.summarizer.version);
@@ -52,7 +58,10 @@ export class HybridMemory {
     for (const event of events) counts.set(event.namespace, (counts.get(event.namespace) ?? 0) + 1);
     let pending = [...counts.values()].reduce((n, count) => n + completedRanges(count).length, 0) - nodes.length;
     const provider = this.options.embeddings;
-    if (provider) pending += nodes.length - this.store.embeddings(provider.model, provider.version).length;
+    if (provider) {
+      const indexed = new Set(this.store.embeddings(provider.model, provider.version).map(e => e.id));
+      pending += nodes.filter(n => !indexed.has(n.id)).length;
+    }
     return Math.max(0, pending);
   }
   private async drain(maxWork: number): Promise<CompactionResult> {
