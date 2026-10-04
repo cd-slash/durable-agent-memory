@@ -39,12 +39,15 @@ if (!health.localTest) {
 }
 const first = await api('chat', { message: 'What database would I probably choose for a small project? Explain the source.', operationId: 'smoke-chat-1' });
 assert.equal(first.status, 'done'); assert.ok(first.retrieval.text.includes('SQLite'));
+if (!health.localTest) assert.match(first.text, /SQLite/i);
 const prefix = (await api('debug')).transcript;
 await api('remember', { content: 'I like espresso after lunch.', kind: 'preference', namespace: 'preferences', idempotencyKey: 'smoke-coffee' });
 assert.deepEqual((await api('debug')).transcript, prefix);
 const second = await api('chat', { message: 'What was the old vision routing decision?', operationId: 'smoke-chat-2' });
 assert.equal(second.status, 'done');
+if (!health.localTest) assert.match(second.text, /Cerebras/i);
 await api('reset', { query: 'database preference and vision routing' });
 const fresh = await api('chat', { message: 'In this new context, what database would I probably choose?', operationId: 'smoke-chat-3' });
 assert.equal(fresh.status, 'done'); assert.ok(fresh.retrieval.text.includes('SQLite'));
+if (!health.localTest) assert.match(fresh.text, /SQLite/i);
 console.log(JSON.stringify({ ok: true, agent, localTest: health.localTest, events: (await api('debug')).events.length, nodes: debug.nodes.length, checks: ['authentication', 'idempotent writes', 'binary tree', 'L0/L1/L2', 'context budget', 'Pi chat', 'unchanged transcript after write', 'new cache epoch', ...(health.localTest ? [] : ['Workers AI semantic embeddings'])] }, null, 2));

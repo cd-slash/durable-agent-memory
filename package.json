@@ -17,7 +17,8 @@
     "deploy": "wrangler deploy",
     "smoke": "tsx scripts/smoke.ts",
     "test:recovery": "tsx scripts/local-recovery.ts",
-    "check": "npm run typecheck && npm test && wrangler deploy --dry-run"
+    "check": "npm run typecheck && npm test && wrangler deploy --dry-run",
+    "test:remote-recovery": "tsx scripts/remote-recovery.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.0.2",

@@ -45,7 +45,7 @@ For `N` events, a complete tree has fewer than `2N` nodes. This v1 scans ranges 
 
 `expand(nodeId)` returns direct children. Parent -> child summaries -> leaves -> raw event is explicit and inspectable. A search hit for a leaf uses the event id and leaf abstract; read then returns raw detail directly. Higher nodes return their own ids. Callers can stop at any level.
 
-Workers AI summaries are structured JSON validated for nonempty strings and size bounds. They preserve decisions, outcomes, preferences, entities, unresolved issues, failures and causality, and treat source text as untrusted data. Bounds are approximate model instructions rather than exact generated-token constraints. The offline extractive fallback truncates summaries and can omit detail; raw FTS/L2 remain accessible.
+Workers AI summaries use a strict JSON schema requiring string L0/L1 fields, then validate nonempty strings and size bounds. The adapter handles both legacy `response` and newer OpenAI-compatible `choices` outputs. For the default GLM model it disables thinking with the supported chat-template setting so reasoning cannot consume the summary output budget. They preserve decisions, outcomes, preferences, entities, unresolved issues, failures and causality, and treat source text as untrusted data. Bounds are approximate model instructions rather than exact generated-token constraints. The offline extractive fallback truncates summaries and can omit detail; raw FTS/L2 remain accessible.
 
 ## 4. Hybrid retrieval
 
@@ -88,7 +88,7 @@ The blocks are retrieved evidence first, actual user text last. Pi retains the b
 
 The invariant tests observe model-facing message arrays in the official Pi runtime, before/after an external memory write and after a memory tool round. They assert that the earlier messages are an unchanged prefix of subsequent requests. Provider-specific serialization and actual cache-hit rates require live evaluation; stable transcript bytes alone do not promise a cache hit.
 
-A reset/compaction intentionally starts a new cache epoch. Pi's persisted provider session identity can survive that boundary; a cache epoch describes prompt shape, not a provider session-id rotation. `hm_epochs` logs explicit host resets; Pi's own compaction markers remain authoritative for automatic compaction history.
+A reset/compaction intentionally starts a new cache epoch. Pi's persisted provider session identity can survive that boundary; a cache epoch describes prompt shape, not a provider session-id rotation. The debug endpoint includes an ephemeral `bootId` to distinguish object incarnations during deployment/restart checks. `hm_epochs` logs explicit host resets; Pi's own compaction markers remain authoritative for automatic compaction history.
 
 ## 7. Current Pi beta integration
 
@@ -115,7 +115,7 @@ MemoryJobs is an independent lifecycle capability with a stable, singleflight su
 
 There is a small event-commit/queue-enqueue boundary. Request acknowledgment occurs only after queue enqueue; if the process fails earlier, an idempotent caller retries and startup discovers missing work. A dormant object with neither a previously scheduled alarm nor further traffic is not promised an immediate wake for an unacknowledged write.
 
-File-backed tests run Pi and memory tables in the same SQLite file through separate connections. They reopen both and compare exact transcripts and memories. `npm run test:recovery` runs the real Worker/SQLite Durable Object/PiHarness under Wrangler, stops workerd, restarts it using the same persisted directory and verifies unchanged events, nodes and Pi transcript. The local model is explicitly scripted. Mid-flight hosted eviction and alarm recovery with real inference still require validation against the target account.
+File-backed tests run Pi and memory tables in the same SQLite file through separate connections. They reopen both and compare exact transcripts and memories. `npm run test:recovery` runs the real Worker/SQLite Durable Object/PiHarness under Wrangler, stops workerd, restarts it using the same persisted directory and verifies unchanged events, nodes and Pi transcript. The local model is explicitly scripted. `npm run test:remote-recovery` additionally redeploys the real Worker, observes a changed object `bootId`, and asserts unchanged events, summary nodes, Pi transcript and epochs. Hosted smoke tests validate real Workers AI summaries/embeddings, Pi answers, and reset/handoff retrieval. Mid-flight eviction and alarm recovery during active real inference remain a production validation task.
 
 ## 9. Embedding strategy and Vectorize decision
 

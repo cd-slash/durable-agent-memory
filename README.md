@@ -2,6 +2,8 @@
 
 A TypeScript long-term memory engine for SQLite-backed Cloudflare Durable Objects, with a working integration with the beta **PiHarness** API. MIT licensed.
 
+**Deployed demo:** <https://durable-agent-memory.cloudflare-henry.workers.dev> (data APIs require the demo token).
+
 **Pi transcript ≠ long-term memory ≠ retrieved working context.**
 
 - **Pi Durable** retains the exact active transcript, inbox, task graph and model loop, and recovers interrupted work.
@@ -117,6 +119,8 @@ npm run deploy
 
 Enter a random token through Wrangler's secret prompt. Store it in your password manager. No provider API key is needed for the `AI` binding. `wrangler.jsonc` declares a `new_sqlite_classes` migration and the `AI` binding. Do not deploy with `LOCAL_TEST=true`. The default model is `@cf/zai-org/glm-4.7-flash`; update `MODEL` only to a model listed by the current Agents Workers AI provider catalog.
 
+The deployment created from this workspace keeps its demo token in `/home/coder/.config/durable-agent-memory/demo-token` (mode 0600), outside the repository. Use it in the inspection UI; it is separate from your Cloudflare API token.
+
 The root inspection UI and `/health` are public; **all memory, chat and debug APIs require `Authorization: Bearer <DEMO_TOKEN>`**. Without the secret, these APIs fail closed. This is a developer demo with one shared token, not a multi-user access-control system. Named agent ids select isolated Durable Objects, but every holder of the shared token can access every named agent.
 
 Run the remote smoke test without placing the secret in shell history:
@@ -126,6 +130,8 @@ read -rs DEMO_TOKEN; export DEMO_TOKEN; echo
 DEMO_URL=https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev npm run smoke
 unset DEMO_TOKEN
 ```
+
+To verify hosted persistence, set `DEMO_URL`, `DEMO_TOKEN`, and `DEMO_AGENT` to an existing smoke-tested agent, then run `npm run test:remote-recovery` with your Cloudflare credentials exported. It redeploys the Worker, requires a changed Durable Object `bootId`, and compares exact events, nodes, transcript and epochs.
 
 Watch errors in another terminal with `npx wrangler tail --format json`. Logs use subsystem markers (`hm_request_failed`, `hm_summary_retry`, `pi_report`); they do not print submitted memory or provider output. In deployed mode the smoke test also verifies persisted Workers AI vectors and semantic retrieval. Model calls incur Workers AI charges. Remote verification must be done on a successfully authenticated deployment; local tests do not prove account permissions or hosted model availability.
 
