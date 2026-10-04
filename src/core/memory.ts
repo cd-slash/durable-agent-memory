@@ -79,10 +79,10 @@ export class HybridMemory {
         const children = level === 0 ? [] : [existing.get(key(namespace, start, middle))!, existing.get(key(namespace, middle + 1, end))!];
         if (children.some(c => !c)) continue;
         const summaries = level === 0 ? await this.summarizer.summarizeLeaf(group[start]) : await this.summarizer.summarizeNode(children);
-        if (!summaries.l0?.trim() || !summaries.l1?.trim()) throw new Error('Summarizer returned empty representations');
+        if (typeof summaries.l0 !== 'string' || typeof summaries.l1 !== 'string' || !summaries.l0.trim() || !summaries.l1.trim() || summaries.l0.length > 2000 || summaries.l1.length > 12000) throw new Error('Summarizer returned invalid representations');
         const childIds = level === 0 ? [group[start].id] : children.map(c => c.id);
-        const contentHash = await sha256(canonical({ namespace, start, end, level, version: this.summarizer.version, summaries, childHashes: level === 0 ? [group[start].contentHash] : children.map(c => c.contentHash) }));
-        const node: SummaryNode = { type: 'node', id: 'n_' + contentHash, namespace, rangeStart: start, rangeEnd: end, level, ...summaries, createdAt: this.now(), contentHash, version: this.summarizer.version, children: childIds, eventIds: group.slice(start, end + 1).map(e => e.id), kinds: [...new Set(group.slice(start, end + 1).map(e => e.kind))] };
+        const contentHash = await sha256(canonical({ namespace, start, end, level, version: this.summarizer.version, summaries: { l0: summaries.l0, l1: summaries.l1 }, childHashes: level === 0 ? [group[start].contentHash] : children.map(c => c.contentHash) }));
+        const node: SummaryNode = { type: 'node', id: 'n_' + contentHash, namespace, rangeStart: start, rangeEnd: end, level, l0: summaries.l0, l1: summaries.l1, createdAt: this.now(), contentHash, version: this.summarizer.version, children: childIds, eventIds: group.slice(start, end + 1).map(e => e.id), kinds: [...new Set(group.slice(start, end + 1).map(e => e.kind))] };
         this.store.insertNode(node);
         existing.set(rangeKey, node); createdNodes++; work++;
       }
@@ -106,6 +106,11 @@ export class HybridMemory {
     if (typeof input.query !== 'string' || input.query.length > 10000) throw new Error('Invalid query');
     const limit = input.limit ?? 20;
     if (!Number.isSafeInteger(limit) || limit < 0 || limit > 1000) throw new Error('limit must be an integer from 0 to 1000');
+    for (const namespaces of [input.namespaces]) {
+      if (namespaces !== undefined && (!Array.isArray(namespaces) || namespaces.some(n => typeof n !== 'string' || n.length > 256))) throw new Error('Invalid namespace filters');
+    }
+    if (input.kinds !== undefined && (!Array.isArray(input.kinds) || input.kinds.some(k => !memoryKinds.includes(k)))) throw new Error('Invalid kind filters');
+    if (input.includeRecent !== undefined && typeof input.includeRecent !== 'boolean') throw new Error('Invalid includeRecent');
     const events = this.store.events(), nodes = this.store.nodes(this.summarizer.version);
     const eventMap = new Map(events.map(e => [e.id, e]));
     const leaves = new Map(nodes.filter(n => n.level === 0).map(n => [n.eventIds[0], n]));

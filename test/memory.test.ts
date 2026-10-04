@@ -73,6 +73,25 @@ describe('immutable binary memory', () => {
     await expect(engine.compact()).rejects.toThrow('offline'); expect(engine.pending()).toBe(1);
     await Promise.all([engine.compact(), engine.compact()]); expect(engine.pending()).toBe(0); expect(store.nodes()).toHaveLength(1);
   });
+  it('ignores extra summarizer fields and validates external filters', async () => {
+    const { store, memory } = setup();
+    await memory.remember({ content: 'Valid event' });
+    const summary = { l0: 'Valid abstract', l1: 'Valid summary', id: 'overridden', type: 'event' };
+    const engine = new HybridMemory({ store, summarizer: { version: 'untrusted-output-v1', summarizeLeaf: async () => summary, summarizeNode: async () => summary } });
+    await engine.compact();
+    const node = store.nodes('untrusted-output-v1')[0];
+    expect(node.type).toBe('node'); expect(node.id).toMatch(/^n_[a-f0-9]{64}$/);
+    await expect(engine.search({ query: 'test', kinds: ['bad' as never] })).rejects.toThrow('Invalid kind');
+    await expect(engine.search({ query: 'test', namespaces: 'bad' as never })).rejects.toThrow('Invalid namespace');
+  });
+  it('an explicit compact finishes pending work when a bounded job is already running', async () => {
+    const { memory, store } = setup();
+    for (let i = 0; i < 8; i++) await memory.remember({ content: `Memory ${i}` });
+    const bounded = memory.compact({ maxWork: 1 });
+    const full = memory.compact();
+    expect((await bounded).createdNodes).toBe(1);
+    expect((await full).pending).toBe(0); expect(store.nodes()).toHaveLength(15);
+  });
   it('reindexes a different embedding model without altering sources', async () => {
     const { memory, store } = setup();
     await memory.remember({ content: 'SQLite is my favourite' }); await memory.compact();
