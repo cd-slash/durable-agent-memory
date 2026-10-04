@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "durable-agent-memory",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {"bindings": [{"name":"AGENTS","class_name":"MemoryAgent"}]},
+  "migrations": [{"tag":"v1","new_sqlite_classes":["MemoryAgent"]}],
+  "ai": {"binding":"AI"},
+  "vars": {"MODEL":"@cf/zai-org/glm-4.7-flash"},
+  "observability": {"enabled":true}
+}
