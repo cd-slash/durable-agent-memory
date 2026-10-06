@@ -13,6 +13,7 @@ import { ExtractiveSummarizer } from './summarization/extractive';
 import { memoryExtension, prepareTurn, retainTranscript } from './pi/extension';
 import { localProvider } from './testing/local-provider';
 import { sha256 } from './core/hierarchy';
+import { piAIBinding } from './pi/workers-ai-binding';
 import { remoteRpc, remoteSubmit, operationStream } from './pi/remote';
 import type { ContextInput, RememberInput, SearchInput } from './core/types';
 export interface Env {
@@ -32,7 +33,7 @@ export class MemoryAgent extends DurableObject<Env> {
   });
   readonly jobs = new MemoryJobs(this.memory);
   readonly local = this.env.LOCAL_TEST === 'true' ? localProvider() : undefined;
-  readonly ai = createAI({ binding: this.env.AI });
+  readonly ai = createAI({ binding: piAIBinding(this.env.AI) });
   readonly registry = createRegistry();
   readonly harness = new PiHarness({
     harness: async ({ storage, context }) => {

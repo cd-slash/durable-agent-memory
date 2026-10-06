@@ -61,3 +61,30 @@ it('preserves initial nonempty message/start blocks from Workers AI before apply
   expect(updates.filter(e => e.contentIndex === 0).map(e => e.delta).join('')).toBe('First block');
   expect(updates.filter(e => e.contentIndex === 1).map(e => e.delta).join('')).toBe('Second block');
 });
+it('normalizes Workers AI raw JSON/stream responses and preserves the native Response', async () => {
+  const { normalizeRawAIResponse, piAIBinding } = await import('../src/pi/workers-ai-binding');
+  const response = Response.json({ choices: [] });
+  expect(normalizeRawAIResponse(response)).toBe(response);
+  expect(await normalizeRawAIResponse({ choices: [] }).json()).toEqual({ choices: [] });
+  const stream = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('data: [DONE]\n\n')); c.close(); } });
+  const normalized = normalizeRawAIResponse(stream);
+  expect(normalized.headers.get('content-type')).toBe('text/event-stream');
+  expect(await normalized.text()).toContain('[DONE]');
+  expect(() => normalizeRawAIResponse(undefined)).toThrow('invalid');
+  const binding = { run: async () => ({ choices: [] }) } as unknown as Ai;
+  expect(await (await Reflect.apply(piAIBinding(binding).run, binding, ['@cf/zai-org/glm-4.7-flash', {}, { returnRawResponse: true }]) as unknown as Response).json()).toEqual({ choices: [] });
+});
+it('official Agents Pi provider accepts a normalized JSON binding response after a tool result', async () => {
+  const { createAI } = await import('agents/models/pi-ai');
+  const { piAIBinding } = await import('../src/pi/workers-ai-binding');
+  const { fauxToolCall } = await import('@earendil-works/pi-ai');
+  const binding = { run: async () => ({ choices: [{ message: { content: 'Preference recorded.' }, finish_reason: 'stop' }] }) } as unknown as Ai;
+  const ai = createAI({ binding: piAIBinding(binding) }), model = ai('@cf/zai-org/glm-4.7-flash');
+  const result = await ai.complete(model, { messages: [
+    { role: 'user', content: 'Remember SQLite', timestamp: 1 },
+    fauxAssistantMessage(fauxToolCall('remember', { content: 'SQLite' }, { id: 'remember-1' }), { stopReason: 'toolUse' }),
+    { role: 'toolResult', toolCallId: 'remember-1', toolName: 'remember', content: [{ type: 'text', text: 'Stored' }], isError: false, timestamp: 2 },
+  ] });
+  expect(result.stopReason).toBe('stop');
+  expect(result.content).toEqual([{ type: 'text', text: 'Preference recorded.' }]);
+});

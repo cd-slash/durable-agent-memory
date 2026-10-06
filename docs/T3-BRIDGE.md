@@ -2,7 +2,7 @@
 
 ## What exists upstream (checked 2026-10-06)
 
-I found no verified ready-made T3-to-Pi-Durable integration in public GitHub code or T3 issues. This is a bounded search, not a claim that none exists privately. Search hits for `PiHarness` and T3 included another frontend's **local CLI** harness, not Cloudflare Pi Durable.
+Public GitHub code and T3 issue searches found no verified ready-made T3-to-Pi-Durable integration. This is a bounded search, not a claim that none exists privately. Search hits for `PiHarness` and T3 included another frontend's **local CLI** harness, not Cloudflare Pi Durable.
 
 The source contracts used here are:
 
@@ -103,10 +103,16 @@ BRIDGE_REMOTE_URL=https://YOUR-WORKER.workers.dev \
   BRIDGE_TOKEN_FILE=/path/to/private/token npm run test:bridge
 ```
 
-The local integration runs the actual executable, Wrangler/workerd, SQLite DO and PiHarness with an explicitly scripted provider. It tests discovery, streaming, authentication, isolated chats, process resume, Worker restart, abort, and killing both observer and Worker mid-turn before retrying the same prompt. It verifies exactly one accepted user input and checks that a memory write leaves the transcript unchanged. Unit tests separately prove cache-friendly model-facing prefixes and reconnect delta deduplication. Remote smoke uses real Workers AI.
+The local integration runs the actual executable, Wrangler/workerd, SQLite DO and PiHarness with an explicitly scripted provider. It tests discovery, streaming, authentication, isolated chats, process resume, Worker restart, abort, and killing both observer and Worker mid-turn before retrying the same prompt. It verifies exactly one accepted user input and checks that a memory write leaves the transcript unchanged. Unit tests separately prove cache-friendly model-facing prefixes and reconnect delta deduplication. Remote smoke uses real Workers AI, invokes `remember`, checks the persisted event and observes the post-tool confirmation. Workers AI raw-return shapes are normalized at the public binding boundary (Response, SSE ReadableStream, or JSON) before the official Agents provider consumes them. This defensively protects the beta adapter's expected raw-Response contract when model return shapes vary.
 
 An accepted operation is durable. Observation retries are bounded; after exhaustion the bridge fails the T3 turn and keeps its manifest intent so an identical retry can recover. If a process dies before a prompt reaches Cloudflare, retry is required; the bridge is not a background outbox daemon. There is no atomic acknowledgment across T3's database and the local manifest, so crashes around completion require inspecting/retrying the pending operation. Concurrent writers using one manifest are not supported; do not run two T3 sessions against the same manifest simultaneously. Other clients holding the shared token can still write to that object; production needs per-session admission/authorization.
 
 ## Remaining work for a full remote coding harness
 
 A coding workspace needs a separately designed execution boundary: authenticated filesystem/tool RPC to this machine or a Cloudflare Workspace/Sandbox, replay policies and operation deduplication, cancellation, permission enforcement, filesystem checkpoints and Git synchronization. Loading T3's local extension into a Worker is not a compatible substitute. Also add a first-class remote-provider capability profile, steering/follow-up, fork/rollback semantics, tenant authorization, spend/rate limits, bounded transcript pagination, concurrent-writer arbitration and beta-version contract CI. Live mid-generation Cloudflare eviction tests are still needed; local workerd recovery is not proof of every hosted failure mode.
+
+## Verification in this environment
+
+Configured the Pi provider on this T3 server with `/home/coder/workspaces/pi-durable-agent-cf/bin/pi-durable`. T3's live catalog discovered **Pi default** and **cloudflare/@cf/zai-org/glm-4.7-flash**. The executable completed chat and a real `remember` tool round against the deployed Worker. Local tests also killed both bridge and workerd during generation and proved one accepted user entry after resumption. The native T3 discovery path was verified; a chat created and driven through the T3 UI itself was not exercised because this server has no attached browser automation host.
+
+Final verification: 26 unit/integration tests passed; typecheck and Worker dry-run passed; local executable/workerd crash and cancellation checks passed; live executable/Workers AI chat plus `remember` continuation passed. Sampled live logs contained 50 `ok` outcomes, no `pi_report`/`hm_request_failed` markers, and one recoverable summary retry. Beta-provider failures can still surface as an unanswered Pi operation; retained events and pending summaries are not discarded.
