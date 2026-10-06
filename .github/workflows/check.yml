@@ -11,5 +11,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run test:workspace
       - run: npm run test:recovery
       - run: npm run test:bridge

@@ -16,8 +16,12 @@ import { sha256 } from './core/hierarchy';
 import { piAIBinding } from './pi/workers-ai-binding';
 import { remoteRpc, remoteSubmit, operationStream } from './pi/remote';
 import type { ContextInput, RememberInput, SearchInput } from './core/types';
+import { createWorkspace, workspaceExtension } from './execution/workspace';
+import { DEFAULT_WEB_HOSTS, webExtension } from './web/tools';
 export interface Env {
   AGENTS: DurableObjectNamespace<MemoryAgent>; AI: Ai; MODEL: string;
+  LOADER: WorkerLoader;
+  WEB_ALLOWED_HOSTS?: string;
   /** Local-only switch. Real deployment always uses Workers AI. */
   LOCAL_TEST?: string;
   DEMO_TOKEN?: string;
@@ -35,9 +39,14 @@ export class MemoryAgent extends DurableObject<Env> {
   readonly local = this.env.LOCAL_TEST === 'true' ? localProvider() : undefined;
   readonly ai = createAI({ binding: piAIBinding(this.env.AI) });
   readonly registry = createRegistry();
+  readonly workspace = createWorkspace(this.ctx.storage, this.env.LOADER);
+  readonly webHosts = this.env.WEB_ALLOWED_HOSTS?.split(',').map(host => host.trim()).filter(Boolean) ?? DEFAULT_WEB_HOSTS;
   readonly harness = new PiHarness({
     harness: async ({ storage, context }) => {
       this.registry.install(memoryExtension(this.memory, () => this.jobs.enqueue()));
+      await this.workspace.fs.mkdir('/workspace', { recursive: true });
+      this.registry.install(workspaceExtension(this.workspace));
+      this.registry.install(webExtension(this.webHosts));
       const models = createModels(); models.setProvider(this.local?.provider ?? this.ai.provider);
       return Harness.open(storage, { models, registry: this.registry, settings: { retry: { enabled: true, maxRetries: 2, baseDelayMs: 1000 } }, onReport: () => console.warn('pi_report') }, context);
     },
@@ -48,7 +57,7 @@ export class MemoryAgent extends DurableObject<Env> {
     const path = new URL(request.url).pathname;
     try {
       if (request.method === 'GET' && path === '/events') return await operationStream(this, new URL(request.url).searchParams.get('operationId') ?? '');
-      if (request.method === 'GET' && path === '/debug') return Response.json({ bootId: this.bootId, events: this.store.events(), nodes: this.store.nodes(), pending: this.memory.pending(), embeddingModels: this.sql.all('SELECT model,version,COUNT(*) AS count FROM hm_embeddings GROUP BY model,version'), localTest: this.env.LOCAL_TEST === 'true', transcript: await this.harness.messages(), epochs: this.sql.all('SELECT * FROM hm_epochs') });
+      if (request.method === 'GET' && path === '/debug') return Response.json({ bootId: this.bootId, capabilities: { execution: 'isolated-javascript', workspace: '/workspace', webFetchHosts: this.webHosts, webSearch: false }, events: this.store.events(), nodes: this.store.nodes(), pending: this.memory.pending(), embeddingModels: this.sql.all('SELECT model,version,COUNT(*) AS count FROM hm_embeddings GROUP BY model,version'), localTest: this.env.LOCAL_TEST === 'true', transcript: await this.harness.messages(), epochs: this.sql.all('SELECT * FROM hm_epochs') });
       if (request.method === 'GET' && path === '/read') return Response.json(await this.memory.read(new URL(request.url).searchParams.get('id') ?? ''));
       if (request.method === 'GET' && path === '/expand') return Response.json(await this.memory.expand(new URL(request.url).searchParams.get('id') ?? ''));
       if (request.method !== 'POST') return new Response('Not found', { status: 404 });

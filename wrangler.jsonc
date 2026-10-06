@@ -7,6 +7,7 @@
   "durable_objects": {"bindings": [{"name":"AGENTS","class_name":"MemoryAgent"}]},
   "migrations": [{"tag":"v1","new_sqlite_classes":["MemoryAgent"]}],
   "ai": {"binding":"AI"},
+  "worker_loaders": [{"binding":"LOADER"}],
   "vars": {"MODEL":"@cf/zai-org/glm-4.7-flash"},
   "observability": {"enabled":true}
 }
