@@ -53,12 +53,12 @@ export class RpcProjector {
     for (const event of events) {
       switch (event.type) {
         case 'snapshot': this.snapshot(event); break;
-        case 'message_start': if (event.message.role === 'assistant') this.begin(event.message); break;
+        case 'message_start': if (event.message.role === 'assistant') this.reconcile(event.message); break;
         case 'message_update':
           for (const change of event.changes) {
             if (change.type === 'text_delta' || change.type === 'thinking_delta') this.delta(change.contentIndex, change.type === 'text_delta' ? 'text' : 'thinking', change.delta, event.usage);
             else if (change.type === 'message') this.reconcile(change.message);
-            else if (change.type === 'block' && (change.block.type === 'text' || change.block.type === 'thinking')) {
+            else if (['block', 'text_start', 'thinking_start'].includes(change.type) && 'block' in change && (change.block.type === 'text' || change.block.type === 'thinking')) {
               const text = change.block.type === 'text' ? change.block.text : change.block.thinking;
               const previous = this.blocks.get(change.contentIndex)?.text ?? '';
               if (!text.startsWith(previous)) throw new Error('Remote stream changed an already emitted prefix');

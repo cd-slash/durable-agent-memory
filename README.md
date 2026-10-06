@@ -58,6 +58,17 @@ DEMO_TOKEN=local-testing-only npm run smoke
 
 The smoke test writes a SQLite preference, adds a vision-routing decision followed by 15 other events in its namespace, verifies the binary tree and progressive expansion, chats with Pi, checks that an independent memory write leaves the Pi transcript unchanged, then resets the context and recalls the preference again. The UI's **Inspect all** response shows every event, node, child relationship, L0/L1 representation, embedding model/version, active transcript and cache epoch. Search and chat responses expose scores and selected context. Read an event for L2, or expand a node to its direct children.
 
+## Connect T3 Code
+
+A local executable now bridges T3's Pi JSONL RPC to this deployed **Pi Durable** harness. It supports streamed chat, memory tools, isolated/resumable sessions and cancellation. It provides a chat/memory harness; local filesystem/shell tools and T3 MCP extensions need a separate execution design.
+
+```bash
+npm run build:bridge
+npm run test:bridge
+```
+
+Configure a private endpoint/token-file config, then point T3's Pi binary setting at `bin/pi-durable`. See [T3 setup, protocol and compatibility](docs/T3-BRIDGE.md) before connecting. Unsupported full-CLI features fail explicitly.
+
 ## Independent engine
 
 ```ts

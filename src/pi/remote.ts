@@ -1,3 +1,5 @@
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
+import type { ModelThinkingLevel } from '@earendil-works/pi-ai';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { MemoryAgent } from '../agent';
 import { prepareTurn } from './extension';
@@ -18,7 +20,7 @@ export async function remoteRpc(agent: MemoryAgent, body: Record<string, unknown
       const stream = await session.events();
       try {
         return { model, thinkingLevel: stream.snapshot.agent.thinkingLevel ?? 'off',
-          isStreaming: !!stream.snapshot.run, isCompacting: stream.snapshot.compactions.length > 0,
+          isStreaming: !!stream.snapshot.run || stream.snapshot.inbox.length > 0, isCompacting: stream.snapshot.compactions.length > 0,
           pendingMessageCount: stream.snapshot.inbox.length, autoCompactionEnabled: false,
           autoRetryEnabled: true, messageCount: rpcEntries(stream.snapshot.entries).length };
       } finally { await stream.stop(); }
@@ -35,15 +37,19 @@ export async function remoteRpc(agent: MemoryAgent, body: Record<string, unknown
         if (m.role === 'assistant') { sum.input += m.usage.input; sum.output += m.usage.output; sum.cacheRead += m.usage.cacheRead; sum.cacheWrite += m.usage.cacheWrite; sum.total += m.usage.totalTokens; }
         return sum;
       }, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
-      return { userMessages: messages.filter(m => m.role === 'user').length, assistantMessages: messages.filter(m => m.role === 'assistant').length, toolCalls: messages.filter(m => m.role === 'toolResult').length, tokens: usage, cost: 0 };
+      const last = [...messages].reverse().find(m => m.role === 'assistant');
+      return { contextUsage: last?.role === 'assistant' && last.usage.totalTokens ? { tokens: last.usage.totalTokens, contextWindow: model.contextWindow } : undefined, userMessages: messages.filter(m => m.role === 'user').length, assistantMessages: messages.filter(m => m.role === 'assistant').length, toolCalls: messages.filter(m => m.role === 'toolResult').length, tokens: usage, cost: messages.reduce((sum, m) => sum + (m.role === 'assistant' ? m.usage.cost.total : 0), 0) };
     }
     case 'set_model':
       if (body.provider !== model.provider || body.modelId !== model.id) throw new Error('Unsupported remote model');
       if (await session.busy()) throw new Error('Cannot change model during a run');
       await session.setModel(model); return model;
     case 'set_thinking_level':
-      if (body.level !== 'off') throw new Error('This deployment supports thinking off only');
-      return { level: 'off' };
+      if (typeof body.level !== 'string' || !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(body.level)) throw new Error('Invalid prompt thinking level');
+      if (await session.busy()) throw new Error('Cannot change model settings during a run');
+      // The public underlying Harness provides configuration not wrapped by PiSession.
+      await (await (await agent.harness.pi()).root(BACKGROUND_CONTEXT)).configure({ thinkingLevel: body.level as ModelThinkingLevel }, BACKGROUND_CONTEXT);
+      return { level: body.level };
     case 'abort': return { aborted: await session.abort() };
     default: throw new Error('Unsupported remote RPC command');
   }

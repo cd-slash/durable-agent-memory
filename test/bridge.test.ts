@@ -47,3 +47,17 @@ it('persists isolated remote session identities; refuses endpoint changes, forei
     expect(out.at(-1)).toMatchObject({ success: false, error: expect.stringContaining('Tool-free') });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+it('preserves initial nonempty message/start blocks from Workers AI before applying deltas', () => {
+  const out: RpcRecord[] = [], projector = new RpcProjector(e => out.push(e));
+  projector.events([{ type: 'message_start', message: fauxAssistantMessage('First') }]);
+  projector.events([{ type: 'message_update', usage: fauxAssistantMessage('').usage, changes: [
+    { type: 'text_delta', contentIndex: 0, delta: ' block' },
+    { type: 'text_start', contentIndex: 1, block: { type: 'text', text: 'Second' } },
+    { type: 'text_delta', contentIndex: 1, delta: ' block' },
+  ] }]);
+  const final = fauxAssistantMessage([{ type: 'text', text: 'First block' }, { type: 'text', text: 'Second block' }]);
+  projector.finish([{ ...entry(3, ''), model: [final] }]);
+  const updates = out.filter(e => e.type === 'message_update').map(e => e.assistantMessageEvent as { contentIndex: number; delta: string });
+  expect(updates.filter(e => e.contentIndex === 0).map(e => e.delta).join('')).toBe('First block');
+  expect(updates.filter(e => e.contentIndex === 1).map(e => e.delta).join('')).toBe('Second block');
+});

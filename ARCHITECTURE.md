@@ -142,3 +142,11 @@ Production work:
 - Streaming/status APIs, controlled admission during resets, and multi-session host routing.
 - Hosted eviction during live inference/tool execution, provider failure tests and measured cache-hit rates.
 - SDK beta upgrade checks and source/attribution reviews for future imported code. This repository implements its own algorithms and does not copy OptMem/OpenViking source.
+
+## 11. Remote T3 chat bridge
+
+The application now supplies authenticated admission (`/submit`), query/control (`/rpc`), and operation-scoped SSE (`/events`) around public PiHarness session methods. Pi remains the scheduler and durable transcript owner. Frozen retrieval is submitted through the same `prepareTurn()` as HTTP chat, so streaming does not alter the cache invariant.
+
+A local JSONL executable projects Pi Durable events into the subset of coding-agent RPC T3 consumes. Local private manifests map T3 session references to isolated DO names and persist an in-flight operation id before network admission. Reconnection snapshots/final entries supply only missing suffixes; divergent already-emitted text fails rather than silently duplicating or replacing it. Stream disconnect cancels the observer, not Pi execution. `abort` explicitly stops Pi work.
+
+This is intentionally a documented compatibility adapter, not native Pi CLI session-file compatibility or a remote coding workspace. T3's injected local extension cannot run in a Cloudflare Worker. Richer workspace execution and accurate frontend capabilities require a separate provider/tool design. See [T3-BRIDGE.md](docs/T3-BRIDGE.md) for the full mapping, tested recovery boundaries and unsupported commands.

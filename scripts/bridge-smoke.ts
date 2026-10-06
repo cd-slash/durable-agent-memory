@@ -60,7 +60,7 @@ class Client {
     await this.wait(r => r.type === 'agent_settled', after);
     const records = this.records.slice(after);
     assert.ok(records.some(r => r.type === 'agent_start'));
-    assert.ok(records.some(r => r.type === 'response' && r.command === 'prompt' && r.success));
+    assert.ok(records.some(r => r.type === 'response' && r.command === 'prompt' && r.success), String(records.find(r => r.type === 'response' && r.command === 'prompt')?.error ?? 'Missing prompt acknowledgment'));
     return records.filter(r => r.type === 'message_update' && r.assistantMessageEvent?.type === 'text_delta').map(r => r.assistantMessageEvent.delta).join('');
   }
   async close() { const done = new Promise<void>(r => this.proc.once('exit', () => r())); this.proc.kill(); await done; }
@@ -78,6 +78,8 @@ try {
   assert.ok((await client.rpc('get_available_models')).models.length === 1);
   assert.deepEqual(await client.rpc('get_commands'), { commands: [] });
   await client.rpc('set_model', { provider: state.model.provider, modelId: state.model.id });
+  await client.rpc('set_thinking_level', { level: 'low' });
+  assert.equal((await client.rpc('get_state')).thinkingLevel, 'low');
   await client.rpc('set_thinking_level', { level: 'off' });
   const denied = await fetch(`${base}/api/${agent}/rpc`, { method: 'POST', body: JSON.stringify({ type: 'get_state' }) });
   assert.equal(denied.status, 401);
@@ -89,6 +91,12 @@ try {
   const before = await api(agent, 'debug');
   await api(agent, 'remember', { content: 'I like espresso.', kind: 'preference' });
   assert.deepEqual((await api(agent, 'debug')).transcript, before.transcript, 'Memory write must not change transcript prefix');
+  if (remote) {
+    const toolsAfter = client.records.length;
+    await client.prompt('Call the remember tool to retain this preference: My favourite editor theme is Solarized Dark. Confirm after the tool succeeds.');
+    assert.ok(client.records.slice(toolsAfter).some(r => r.type === 'tool_execution_start' && r.toolName === 'remember'), 'Live Pi did not invoke remember');
+    assert.ok((await api(agent, 'debug')).events.some((e: any) => e.content.includes('Solarized')), 'Live remember did not persist memory');
+  }
   await client.close(); client = new Client(sessionFile);
   assert.equal((await client.rpc('get_state')).sessionId, agent);
   assert.ok((await client.rpc('get_messages')).messages.length >= 2);

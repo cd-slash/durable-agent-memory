@@ -81,7 +81,7 @@ export class DurableRpcBridge {
           if (!accepted) throw new Error('Submission failed');
           this.options.emit({ type: 'agent_start' });
           const projector = new RpcProjector(this.options.emit, pending.baseline);
-          this.active = this.observe(operationId, projector).then(() => { delete this.manifest.inFlight; this.save(); this.response(command); }, () => this.response(command, undefined, 'Remote observation failed; resume this session to inspect durable state'))
+          this.active = this.observe(operationId, projector).then(() => { delete this.manifest.inFlight; this.save(); this.response(command); }, (error) => this.response(command, undefined, error instanceof Error && /^(Remote stream changed|Remote operation was unanswered)/.test(error.message) ? error.message : 'Remote observation failed; resume this session to inspect durable state'))
             .finally(() => { this.active = undefined; this.options.emit({ type: 'agent_end', messages: [] }); this.options.emit({ type: 'agent_settled' }); });
           return;
         }
