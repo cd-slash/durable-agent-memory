@@ -13,6 +13,7 @@ import { ExtractiveSummarizer } from './summarization/extractive';
 import { memoryExtension, prepareTurn, retainTranscript } from './pi/extension';
 import { localProvider } from './testing/local-provider';
 import { sha256 } from './core/hierarchy';
+import { remoteRpc, remoteSubmit, operationStream } from './pi/remote';
 import type { ContextInput, RememberInput, SearchInput } from './core/types';
 export interface Env {
   AGENTS: DurableObjectNamespace<MemoryAgent>; AI: Ai; MODEL: string;
@@ -21,6 +22,7 @@ export interface Env {
   DEMO_TOKEN?: string;
 }
 export class MemoryAgent extends DurableObject<Env> {
+  readonly modelId = this.env.MODEL;
   readonly bootId = crypto.randomUUID();
   readonly sql = durableObjectDriver(this.ctx.storage);
   readonly store = new DurableSqliteStore(this.sql);
@@ -44,11 +46,14 @@ export class MemoryAgent extends DurableObject<Env> {
   async onRequest(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
     try {
+      if (request.method === 'GET' && path === '/events') return await operationStream(this, new URL(request.url).searchParams.get('operationId') ?? '');
       if (request.method === 'GET' && path === '/debug') return Response.json({ bootId: this.bootId, events: this.store.events(), nodes: this.store.nodes(), pending: this.memory.pending(), embeddingModels: this.sql.all('SELECT model,version,COUNT(*) AS count FROM hm_embeddings GROUP BY model,version'), localTest: this.env.LOCAL_TEST === 'true', transcript: await this.harness.messages(), epochs: this.sql.all('SELECT * FROM hm_epochs') });
       if (request.method === 'GET' && path === '/read') return Response.json(await this.memory.read(new URL(request.url).searchParams.get('id') ?? ''));
       if (request.method === 'GET' && path === '/expand') return Response.json(await this.memory.expand(new URL(request.url).searchParams.get('id') ?? ''));
       if (request.method !== 'POST') return new Response('Not found', { status: 404 });
       const body = await request.json() as Record<string, unknown>;
+      if (path === '/rpc') return Response.json(await remoteRpc(this, body));
+      if (path === '/submit') return Response.json(await remoteSubmit(this, body));
       if (path === '/remember') {
         const event = await this.memory.remember(body as unknown as RememberInput);
         await this.jobs.enqueue();
@@ -81,7 +86,7 @@ export class MemoryAgent extends DurableObject<Env> {
     } catch (error) {
       // Return known validation errors only; never echo provider responses or submitted content.
       const message = error instanceof Error ? error.message : '';
-      const safe = /^(Memory not found|Invalid (prompt|query|kind|namespace|idempotency|includeRecent)|Memory content|Idempotency key|operationId|maxTokens|limit must|Weights must|message is required)/.test(message);
+      const safe = /^(Memory not found|Invalid (prompt|query|kind|namespace|idempotency|includeRecent)|Memory content|Idempotency key|operationId|maxTokens|limit must|Weights must|message is required|Unsupported remote|Cannot change model|This deployment supports|Images are not supported)/.test(message);
       console.warn(safe ? 'hm_invalid_request' : 'hm_request_failed', { category: error instanceof Error && ['AIError', 'SyntaxError', 'TypeError', 'Error'].includes(error.name) ? error.name : 'unknown', reason: ['Empty summary response', 'Invalid structured summary', 'Summarizer returned invalid representations', 'Embedding batch length mismatch', 'Invalid embedding vector'].includes(message) ? message : 'other' });
       return Response.json({ error: safe ? message : 'Request failed; inspect Worker logs for the subsystem error marker' }, { status: safe ? 400 : 500 });
     }

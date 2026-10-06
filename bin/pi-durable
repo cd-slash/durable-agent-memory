@@ -1,0 +1,3 @@
+#!/bin/sh
+# Repository-local executable. Build with npm run build:bridge.
+exec node "$(dirname "$(realpath "$0")")/../dist/pi-durable.mjs" "$@"

@@ -18,7 +18,9 @@
     "smoke": "tsx scripts/smoke.ts",
     "test:recovery": "tsx scripts/local-recovery.ts",
     "check": "npm run typecheck && npm test && wrangler deploy --dry-run",
-    "test:remote-recovery": "tsx scripts/remote-recovery.ts"
+    "test:remote-recovery": "tsx scripts/remote-recovery.ts",
+    "build:bridge": "esbuild src/bridge/cli.ts --bundle --platform=node --format=esm --outfile=dist/pi-durable.mjs",
+    "test:bridge": "npm run build:bridge && tsx scripts/bridge-smoke.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.0.2",
@@ -31,7 +33,8 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3",
-    "wrangler": "^4.147.0"
+    "wrangler": "^4.147.0",
+    "esbuild": "^0.28.1"
   },
   "repository": {
     "type": "git",
