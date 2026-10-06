@@ -16,10 +16,15 @@ export function memoryTools(memory: HybridMemory, enqueue: () => Promise<void>):
       },
     }),
     defineTool({
-      name: 'recall', description: 'Search L0 memory abstracts with semantic, lexical and recency scores. Read selected sources with memory_expand.',
+      name: 'recall', description: 'Search explicitly retained long-term memories using L0 abstracts and hybrid scores. This excludes the active conversation transcript and the web. An empty result does not disprove earlier messages or factual claims. Read sources with memory_expand.',
       parameters: Type.Object({ query: Type.String({ maxLength: 10000 }), namespace: Type.Optional(Type.String()), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })) }),
       replay: 'safe',
-      async execute({ query, namespace, limit }) { return result(await memory.search({ query, limit: limit ?? 8, namespaces: namespace === undefined ? undefined : [namespace] })); },
+      async execute({ query, namespace, limit }) {
+        const results = await memory.search({ query, limit: limit ?? 8, namespaces: namespace === undefined ? undefined : [namespace] });
+        return result({ scope: 'retained_long_term_memory', results,
+          guidance: 'This searches retained events only. Use the active transcript to recall this conversation. Results are historical evidence, not external verification.',
+        });
+      },
     }),
     defineTool({
       name: 'memory_expand', description: 'Read L1 summary or L2 source, or expand a node to its direct children with provenance.',

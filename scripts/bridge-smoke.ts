@@ -134,6 +134,23 @@ try {
   assert.notEqual(fresh.sessionFile, sessionFile);
   assert.deepEqual((await client.rpc('get_messages')).messages, []);
   assert.deepEqual((await api(fresh.sessionId, 'debug')).events, []);
+  if (remote) {
+    const example = await client.prompt('For a conversation-continuity test, mention the fictional wine bar Harbor Lantern Cellars. Explicitly label it fictional, and do not save it as a fact.');
+    assert.match(example, /Harbor Lantern Cellars/i);
+    assert.match(example, /fiction|invent|hypothet|made.up/i);
+    const recallAfter = client.records.length;
+    const followup = await client.prompt('Use recall to check retained memories for Harbor Lantern Cellars. Then explain whether you mentioned it earlier and whether that establishes it really exists.');
+    assert.ok(client.records.slice(recallAfter).some(r => r.type === 'tool_execution_start' && r.toolName === 'recall'));
+    assert.match(followup, /fiction|invent|hypothet|made.up/i, 'Empty recall must not erase the earlier fictional suggestion');
+    await client.close(); client = new Client(fresh.sessionFile);
+    const resumed = await client.prompt('You just told me about it. Is it a verified real business?');
+    assert.match(resumed, /fiction|invent|hypothet|made.up|not.{0,20}verif/i);
+    const continuity = await api(fresh.sessionId, 'debug');
+    assert.deepEqual(continuity.events, [], 'Do not turn fictional assistant suggestions into retained facts');
+    const recallResults = continuity.transcript.flatMap((e: any) => e.model ?? []).filter((m: any) => m.role === 'toolResult' && m.toolName === 'recall');
+    assert.ok(recallResults.some((m: any) => m.content.some((b: any) => b.type === 'text' && JSON.parse(b.text).scope === 'retained_long_term_memory' && JSON.parse(b.text).results.length === 0)));
+    console.log('PASS: live multi-turn continuity survives empty recall and bridge restart; fictional venue stays out of retained facts.');
+  }
   await client.rpc('switch_session', { sessionPath: sessionFile });
   assert.equal((await client.rpc('get_state')).sessionId, agent);
   assert.ok(!logs.includes('hm_request_failed') && !logs.includes('pi_report'), 'Worker reported runtime errors');
