@@ -7,7 +7,7 @@ let output = '';
 const agent = `workspace-test-${Date.now()}`;
 async function start() {
   output = '';
-  proc = spawn('node_modules/.bin/wrangler', ['dev', '--local', '--port', String(port), '--var', 'LOCAL_TEST:true', '--var', `DEMO_TOKEN:${token}`], { stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+  proc = spawn('node_modules/.bin/wrangler', ['dev', '--config', 'wrangler.execution.jsonc', '--local', '--port', String(port), '--var', 'LOCAL_TEST:true', '--var', `DEMO_TOKEN:${token}`], { stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   proc.stdout!.on('data', c => output += c); proc.stderr!.on('data', c => output += c);
   for (let i = 0; i < 150; i++) {
     try { if ((await fetch(base + '/health')).ok) return; } catch {}

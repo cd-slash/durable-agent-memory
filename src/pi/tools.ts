@@ -22,7 +22,7 @@ export function memoryTools(memory: HybridMemory, enqueue: () => Promise<void>):
       async execute({ query, namespace, limit }) {
         const results = await memory.search({ query, limit: limit ?? 8, namespaces: namespace === undefined ? undefined : [namespace] });
         return result({ scope: 'retained_long_term_memory', results,
-          guidance: 'This searches retained events only. Use the active transcript to recall this conversation. Results are historical evidence, not external verification.',
+          guidance: 'This searches retained events only. An empty result provides no evidence about what was already said in the active conversation. If asked about an earlier message, quote it from the active transcript and preserve its qualifications (fictional, hypothetical, uncertain). Do not deny an earlier message because recall returned nothing. Results are historical evidence, not external verification.',
         });
       },
     }),
