@@ -89,7 +89,7 @@ Chat with “Remember that my favourite database for small projects is SQLite”
 | Images, steer/follow-up during an active turn | Explicitly rejected in this bridge version |
 | `/compact`, rollback, fork, branch navigation, export HTML | Explicitly rejected; use existing host reset/compaction API for cache epochs |
 | Local CLI extensions, skills, auth/settings files | Not loaded remotely; injected extension produces a stderr notice |
-| T3 MCP delegation, permission dialogs, local file/shell tools | Not provided by this chat/memory harness |
+| T3 MCP delegation, permission dialogs, local file/shell tools | Local host tools are not provided; remote workspace file tools are available; isolated JavaScript exec requires the Workers Paid configuration |
 | T3 unattended `--no-tools` text generation | Prompt rejected; restrictions are never silently ignored |
 
 T3's Pi driver advertises capabilities of the full CLI. A binary override cannot change those UI capabilities, so unsupported actions return a clear failed RPC response. A first-class remote T3 provider would be the cleaner long-term way to expose accurate capabilities and richer remote recovery. Do not treat this bridge as a complete remote coding workspace.
@@ -109,7 +109,7 @@ An accepted operation is durable. Observation retries are bounded; after exhaust
 
 ## Remaining work for a full remote coding harness
 
-A coding workspace needs a separately designed execution boundary: authenticated filesystem/tool RPC to this machine or a Cloudflare Workspace/Sandbox, replay policies and operation deduplication, cancellation, permission enforcement, filesystem checkpoints and Git synchronization. Loading T3's local extension into a Worker is not a compatible substitute. Also add a first-class remote-provider capability profile, steering/follow-up, fork/rollback semantics, tenant authorization, spend/rate limits, bounded transcript pagination, concurrent-writer arbitration and beta-version contract CI. Live mid-generation Cloudflare eviction tests are still needed; local workerd recovery is not proof of every hosted failure mode.
+The hosted JavaScript workspace is documented in [EXECUTION.md](EXECUTION.md). A full coding workspace still needs a separately designed execution boundary: authenticated filesystem/tool RPC to this machine or a Cloudflare Workspace/Sandbox, replay policies and operation deduplication, cancellation, permission enforcement, filesystem checkpoints and Git synchronization. Loading T3's local extension into a Worker is not a compatible substitute. Also add a first-class remote-provider capability profile, steering/follow-up, fork/rollback semantics, tenant authorization, spend/rate limits, bounded transcript pagination, concurrent-writer arbitration and beta-version contract CI. Live mid-generation Cloudflare eviction tests are still needed; local workerd recovery is not proof of every hosted failure mode.
 
 ## Verification in this environment
 

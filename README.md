@@ -39,6 +39,7 @@ Requires Node **22.13+** (tested on 22.23.2), npm, and a Cloudflare account with
 npm ci
 npm run check
 npm run test:recovery
+npm run test:workspace
 npx tsx examples/independent.ts
 ```
 
@@ -60,7 +61,7 @@ The smoke test writes a SQLite preference, adds a vision-routing decision follow
 
 ## Connect T3 Code
 
-A local executable now bridges T3's Pi JSONL RPC to this deployed **Pi Durable** harness. It supports streamed chat, memory tools, isolated/resumable sessions and cancellation. It provides a chat/memory harness; local filesystem/shell tools and T3 MCP extensions need a separate execution design.
+A local executable now bridges T3's Pi JSONL RPC to this deployed **Pi Durable** harness. It supports streamed chat, memory tools, isolated/resumable sessions and cancellation. The hosted harness also provides a persistent remote `/workspace` and bounded page fetching. An optional Workers Paid configuration enables tested sandboxed JavaScript execution. It does not access the T3 host’s files, shell or injected MCP extensions. See [execution capabilities](docs/EXECUTION.md).
 
 ```bash
 npm run build:bridge
