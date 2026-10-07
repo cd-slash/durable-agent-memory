@@ -2,3 +2,5 @@
 !sandbox/
 !sandbox/Dockerfile
 !sandbox/checkpoint.py
+!sandbox/Tailnet.Dockerfile
+!sandbox/tailnet_gateway.py

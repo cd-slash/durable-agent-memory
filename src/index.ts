@@ -1,3 +1,4 @@
+import { targetsFromJson, validateTailnet, type TailnetOperation } from './tailnet/policy';
 import { cappedBody } from './sandbox/network';
 import { validateShell, type ShellInput } from './sandbox/policy';
 import { within } from './sandbox/deadline';
@@ -9,6 +10,7 @@ import { projectRoutes, teamCall } from './multiplayer/routes';
 import { debugUI } from './ui';
 export { MemoryAgent } from './agent';
 export { BillingControl } from './billing/control';
+export { TailnetGateway } from './tailnet/gateway';
 export { CodingSandbox, SandboxEgress } from './sandbox/container';
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -53,6 +55,26 @@ export default {
         if (!admitted.ok) return admitted;
         return await within(env.SANDBOX.getByName('project-coding-v1').fetch('https://sandbox/run',{method:'POST',body:JSON.stringify(input)}),105000);
       } catch { return Response.json({error:'Sandbox request invalid, interrupted or denied; no automatic retry'},{status:503}); }
+    }
+    if(url.pathname==='/admin/tailnet/status') {
+      if(!owner)return Response.json({error:'Owner access required'},{status:403});
+      if(request.method!=='GET')return new Response('Method not allowed',{status:405});
+      if(!env.TAILNET)return Response.json({enabled:false,configured:!!env.TAILSCALE_AUTH_KEY});
+      return env.TAILNET.getByName('project-tailnet-v1').fetch('https://gateway/status');
+    }
+    if(url.pathname==='/admin/tailnet/run') {
+      if(!owner)return Response.json({error:'Owner access required'},{status:403});
+      if(request.method!=='POST')return new Response('Method not allowed',{status:405});
+      if(!env.TAILNET||env.TAILNET_ENABLED!=='true'||!env.TAILSCALE_AUTH_KEY)return Response.json({ok:false,error:'Tailnet gateway not activated or enrolled'},{status:503});
+      try {
+        const bytes=await cappedBody(request.body as ReadableStream<Uint8Array>|null,4096,AbortSignal.timeout(5000));
+        const input=JSON.parse(new TextDecoder().decode(bytes)) as TailnetOperation;
+        validateTailnet(input,targetsFromJson(env.TAILNET_TARGETS));
+        const permit=await control.fetch('https://billing/reserve',{method:'POST',body:JSON.stringify({requests:1,storageBytes:4096+bytes.length*16})});
+        if(!permit.ok)return Response.json({ok:false,error:'Billing stop or quota reached'},{status:503});
+        const admitted=await control.fetch('https://billing/agent',{method:'POST',body:JSON.stringify({agent:input.agent})});if(!admitted.ok)return admitted;
+        return await within(env.TAILNET.getByName('project-tailnet-v1').fetch('https://gateway/run',{method:'POST',body:JSON.stringify(input)}),105000);
+      }catch{return Response.json({ok:false,error:'Tailnet request denied or interrupted'},{status:503});}
     }
     const agentMatch = url.pathname.match(/^\/api\/([a-zA-Z0-9_-]{1,64})\//);
     if (!owner) {

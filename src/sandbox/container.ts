@@ -74,7 +74,7 @@ export class CodingSandbox extends DurableObject<SandboxEnv> {
     try {
       await within(this.container().destroy());
       const {lease} = await this.call('status');
-      if (lease) await this.call('release',{token:(lease as SandboxLease).token});
+      if (lease && lease.owner==='coding') await this.call('release',{token:(lease as SandboxLease).token});
       for (const job of this.journal.incomplete()) this.journal.finish(job.id,{exitCode:1,stdout:'',stderr:'',checkpointed:false,error:'Interrupted by stop or object restart; replay denied'});
       await this.ctx.storage.deleteAlarm();
     } catch { await this.call('failure',{}).catch(()=>{}); throw new Error('Sandbox cleanup unconfirmed'); }

@@ -26,7 +26,7 @@ if (changed.length) {
     assert.ok(!/\b(TODO|TBD)\b/.test(text), 'Billing reviews must describe actual evidence');
   }
 }
-for (const file of ['wrangler.jsonc', 'wrangler.execution.jsonc', 'wrangler.sandbox.jsonc']) {
+for (const file of ['wrangler.jsonc', 'wrangler.execution.jsonc', 'wrangler.sandbox.jsonc', 'wrangler.tailnet.jsonc']) {
   const config = JSON.parse(readFileSync(file, 'utf8'));
   assert.ok(config.durable_objects.bindings.some((b: any) => b.name === 'BILLING' && b.class_name === 'BillingControl'), 'Global billing binding required');
   assert.ok(config.migrations.some((m: any) => m.new_sqlite_classes?.includes('BillingControl')), 'Billing migration required');
@@ -50,3 +50,12 @@ assert.ok(SANDBOX.leaseMs <= 90000 && SANDBOX.maxCommandMs <= 30000 && SANDBOX.c
 assert.ok(SANDBOX.checkpointBytes <= 2*1048576 && SANDBOX.networkBytes <= 8*1048576);
 assert.ok(BILLING_LIMITS.sandboxSeconds.day <= 270 && BILLING_LIMITS.sandboxSeconds.month <= 900);
 assert.ok(BILLING_LIMITS.sandboxNetworkBytes.month <= 80*1048576);
+
+const tailnetConfig = JSON.parse(readFileSync("wrangler.tailnet.jsonc","utf8"));
+assert.equal(tailnetConfig.vars.TAILNET_ENABLED,"false");
+assert.equal(tailnetConfig.vars.TAILNET_TARGETS,"[]");
+assert.equal(tailnetConfig.containers.length,1);
+assert.equal(tailnetConfig.containers[0].max_instances,1);
+assert.equal(tailnetConfig.containers[0].scheduling_policy,"default");
+assert.equal(tailnetConfig.containers[0].instance_type,"lite");
+assert.ok(!JSON.stringify(tailnetConfig).includes("tskey-"));

@@ -6,3 +6,6 @@ coverage/
 dist/
 *.sqlite*
 __pycache__/
+
+# Private deployment allowlists and peer identities
+wrangler.tailnet.local.jsonc

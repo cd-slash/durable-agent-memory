@@ -16,6 +16,7 @@ import { sha256 } from './core/hierarchy';
 import { piAIBinding } from './pi/workers-ai-binding';
 import { remoteRpc, remoteSubmit, operationStream } from './pi/remote';
 import type { ContextInput, RememberInput, SearchInput } from './core/types';
+import { tailnetExtension } from './tailnet/extension';
 import { shellExtension } from './sandbox/extension';
 import { createWorkspace, workspaceExtension } from './execution/workspace';
 import { DEFAULT_WEB_HOSTS, webExtension } from './web/tools';
@@ -29,6 +30,10 @@ export interface Env {
   LOADER?: WorkerLoader;
   SANDBOX?: DurableObjectNamespace;
   SANDBOX_ENABLED?: string;
+  TAILNET?: DurableObjectNamespace;
+  TAILNET_ENABLED?: string;
+  TAILNET_TARGETS?: string;
+  TAILSCALE_AUTH_KEY?: string;
   BILLING: DurableObjectNamespace;
   WEB_ALLOWED_HOSTS?: string;
   /** Local-only switch. Real deployment always uses Workers AI. */
@@ -55,6 +60,8 @@ export class MemoryAgent extends DurableObject<Env> {
   readonly jobs = new MemoryJobs(this.memory, this.billing);
   readonly local = this.env.LOCAL_TEST === 'true' ? localProvider() : undefined;
   readonly ai = createAI({ binding: piAIBinding(guardedAI(this.env.AI, this.billing, () => reservePreparedTurnRequest(this.sql))) });
+  readonly tailnetGateway=this.env.TAILNET?.getByName('project-tailnet-v1');
+  tailnetTargets(){return this.env.TAILNET_TARGETS;}
   readonly codingSandbox = this.env.SANDBOX?.getByName('project-coding-v1');
   readonly registry = createRegistry();
   readonly workspace = createWorkspace(this.ctx.storage, this.env.LOADER);
@@ -67,6 +74,7 @@ export class MemoryAgent extends DurableObject<Env> {
       this.registry.install(guardProjectTools(webExtension(this.webHosts, this.billing), this));
       this.registry.install(guardProjectTools(projectExtension(this), this));
       if (this.env.SANDBOX && this.env.SANDBOX_ENABLED === 'true') this.registry.install(guardProjectTools(shellExtension(this), this));
+      if(this.env.TAILNET && this.env.TAILNET_ENABLED==='true')this.registry.install(guardProjectTools(tailnetExtension(this),this));
       this.registry.install(turnBudgetExtension(this.sql));
       const models = createModels(); models.setProvider(this.local ? new Proxy(this.local.provider, { get: (target, key) => {
         if (key === 'streamSimple') return (...args: unknown[]) => { reservePreparedTurnRequest(this.sql); return Reflect.apply(target.streamSimple, target, args); };

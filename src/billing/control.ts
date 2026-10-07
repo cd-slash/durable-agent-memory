@@ -6,7 +6,7 @@ import { SandboxLeases } from '../sandbox/leases';
 import { SANDBOX, SANDBOX_ACTIVATION_BLOCK } from '../sandbox/policy';
 import { BillingLedger } from './ledger';
 import { BillingBlocked, MAX_AGENTS, type Reservation } from './policy';
-interface ControlEnv { AGENTS: DurableObjectNamespace; SANDBOX?: DurableObjectNamespace; SANDBOX_ENABLED?: string }
+interface ControlEnv { AGENTS: DurableObjectNamespace; SANDBOX?: DurableObjectNamespace; SANDBOX_ENABLED?: string; TAILNET?: DurableObjectNamespace; TAILNET_ENABLED?: string }
 export class BillingControl extends DurableObject<ControlEnv> {
   readonly projects = new ProjectStore(durableObjectDriver(this.ctx.storage));
   readonly ledger = new BillingLedger(durableObjectDriver(this.ctx.storage));
@@ -25,12 +25,24 @@ export class BillingControl extends DurableObject<ControlEnv> {
     try {
       if (action.startsWith('/team/') && request.method === 'POST') return projectControl(request, this.projects, this.ledger);
       if (action === '/status' && request.method === 'GET') return Response.json({ ...this.ledger.status(), sandbox: { enabled: this.env.SANDBOX_ENABLED === 'true' && !SANDBOX_ACTIVATION_BLOCK, activationBlock: SANDBOX_ACTIVATION_BLOCK, lease: this.sandbox.status() ?? null, limits: SANDBOX } });
+      if(action==='/tailnet/acquire' && request.method==='POST') {
+        if(this.env.TAILNET_ENABLED!=='true'||!this.env.TAILNET)throw new BillingBlocked('Tailnet gateway disabled');
+        const body=await request.json() as {agent:string;operationId:string;tool:string};
+        if(!/^[a-zA-Z0-9_-]{1,64}$/.test(body.agent)||!/^[a-zA-Z0-9_-]{1,128}$/.test(body.operationId)||!['tailnet_fetch','tailnet_probe','tailnet_ssh_check'].includes(body.tool)||![...this.ctx.storage.sql.exec('SELECT name FROM billing_known_agents WHERE name=?',body.agent)].length)throw new BillingBlocked('Unknown tailnet actor');
+        const projectAgent=this.projects.agent(body.agent);
+        if(projectAgent&&!projectAgent.allowedTools.includes(body.tool))throw new BillingBlocked('Tailnet tool denied by project policy');
+        return Response.json(this.sandbox.acquire(body.agent,body.operationId,'tailnet'));
+      }
       if (action.startsWith('/sandbox/')) {
         if (action === '/sandbox/status' && request.method === 'GET') return Response.json({ lease: this.sandbox.status() ?? null });
         if (request.method !== 'POST') return new Response('Not found', { status: 404 });
         const body = await request.json() as {agent?:string;operationId?:string;token?:string;bytes?:number};
         if (action === '/sandbox/failure') {this.ledger.stop('Sandbox cleanup unconfirmed; explicit owner stop/inspection required'); return Response.json({stopped:true});}
         if (action === '/sandbox/release' && typeof body.token === 'string') {this.sandbox.release(body.token);return Response.json({released:true});}
+        if(action==='/sandbox/active-tailnet'&&body.token){
+          if(this.env.TAILNET_ENABLED!=='true'||!this.env.TAILNET||this.sandbox.assertActive(body.token).owner!=='tailnet')throw new BillingBlocked('Tailnet lease inactive');
+          return Response.json({allowed:true});
+        }
         if (this.env.SANDBOX_ENABLED !== 'true' || !this.env.SANDBOX) throw new BillingBlocked('Sandbox disabled pending owner cost approval');
         if (action === '/sandbox/acquire') {
           if (SANDBOX_ACTIVATION_BLOCK) throw new BillingBlocked(SANDBOX_ACTIVATION_BLOCK);
@@ -50,7 +62,7 @@ export class BillingControl extends DurableObject<ControlEnv> {
         return this.env.AGENTS.get(this.env.AGENTS.idFromName(agent)).fetch('https://agent/billing-inspect');
       }
       if (request.method !== 'POST') return new Response('Not found', { status: 404 });
-      if (action === '/stop') { const alreadyStopped = this.ledger.status().stopped; this.ledger.stop('Owner emergency stop'); if (!alreadyStopped) this.ctx.waitUntil(this.abortRegistered()); if (this.env.SANDBOX) this.ctx.waitUntil(this.env.SANDBOX.getByName('project-coding-v1').fetch('https://sandbox/stop',{method:'POST'}).then(()=>{}).catch(()=>{})); return Response.json({ ...this.ledger.status(), cancellation: 'bounded best-effort agent abort and singleton container destruction requested' }); }
+      if (action === '/stop') { const alreadyStopped = this.ledger.status().stopped; this.ledger.stop('Owner emergency stop'); if (!alreadyStopped) this.ctx.waitUntil(this.abortRegistered()); if(this.env.TAILNET)this.ctx.waitUntil(this.env.TAILNET.getByName('project-tailnet-v1').fetch('https://gateway/stop',{method:'POST'}).then(()=>{}).catch(()=>{})); if (this.env.SANDBOX) this.ctx.waitUntil(this.env.SANDBOX.getByName('project-coding-v1').fetch('https://sandbox/stop',{method:'POST'}).then(()=>{}).catch(()=>{})); return Response.json({ ...this.ledger.status(), cancellation: 'bounded best-effort agent abort and singleton container destruction requested' }); }
       if (action === '/resume') {
         const body = await request.json() as { confirm?: string };
         if (body.confirm !== 'RESUME BILLABLE WORK') return Response.json({ error: 'Explicit resume confirmation required' }, { status: 400 });
