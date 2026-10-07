@@ -1,0 +1,12 @@
+import { readFile } from 'node:fs/promises';
+const action = process.argv[2] ?? 'status';
+if (!['status', 'stop', 'resume'].includes(action)) throw new Error('Use status, stop or resume');
+if (action === 'resume' && !process.argv.includes('--confirm-resume')) throw new Error('Resume requires --confirm-resume; usage is never reset');
+const base = process.env.BRIDGE_REMOTE_URL ?? 'https://durable-agent-memory.cloudflare-henry.workers.dev';
+const tokenFile = process.env.BRIDGE_TOKEN_FILE;
+if (!tokenFile) throw new Error('Set BRIDGE_TOKEN_FILE to the existing private token file; never pass credentials as arguments');
+if (!base.startsWith('https://') && !base.startsWith('http://127.0.0.1:')) throw new Error('HTTPS required');
+const token = (await readFile(tokenFile, 'utf8')).trim();
+const response = await fetch(`${base}/admin/billing/${action}`, { method: action === 'status' ? 'GET' : 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(action === 'resume' ? { body: JSON.stringify({ confirm: 'RESUME BILLABLE WORK' }) } : {}), signal: AbortSignal.timeout(15000) });
+if (!response.ok) throw new Error(`Billing control HTTP ${response.status}; stop retries and use the out-of-band procedure if needed`);
+console.log(JSON.stringify(await response.json(), null, 2));

@@ -37,20 +37,20 @@ export async function prepareTurn(memory: HybridMemory, sql: SqlDriver, query: s
 /** Retain a lossless episode before a deliberate cache epoch transition. Raw events are never replaced. */
 export async function retainTranscript(memory: HybridMemory, source: unknown, key: string): Promise<void> {
   const content = JSON.stringify(source);
-  for (let offset = 0; offset < content.length; offset += 80000) {
-    await memory.remember({ content: content.slice(offset, offset + 80000), kind: 'episode', namespace: 'episodes', idempotencyKey: `pi-retain:${key}:${offset}`, metadata: { source: 'pi-transcript', offset, totalCharacters: content.length } });
+  for (let offset = 0; offset < content.length; offset += 2000) {
+    await memory.remember({ content: content.slice(offset, offset + 2000), kind: 'episode', namespace: 'episodes', idempotencyKey: `pi-retain:${key}:${offset}`, metadata: { source: 'pi-transcript', offset, totalCharacters: content.length } });
   }
 }
-export function memoryExtension(memory: HybridMemory, enqueue: () => Promise<void> = async () => {}): Extension {
+export function memoryExtension(memory: HybridMemory, enqueue: () => Promise<void> = async () => {}, beforeTool: () => Promise<void> = async () => {}): Extension {
   return {
     name: 'hybrid-memory-v1',
     sections: [{ key: 'preamble', render: () => SYSTEM_INSTRUCTIONS, tag: false }],
-    tools: memoryTools(memory, enqueue),
+    tools: memoryTools(memory, enqueue, beforeTool),
     hooks: [hook(CompactionTask, {
       async beforeCompact(compaction, api) {
         await retainTranscript(memory, compaction.entries, `${api.conversationId}:${api.taskId}:${await sha256(JSON.stringify(compaction.entries))}`);
         await enqueue();
-        await memory.compact();
+        await memory.compact({ maxWork: 8 });
         // Pi remains responsible for the actual context compaction and handoff summary.
         return undefined;
       },

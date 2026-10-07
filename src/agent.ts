@@ -18,9 +18,13 @@ import { remoteRpc, remoteSubmit, operationStream } from './pi/remote';
 import type { ContextInput, RememberInput, SearchInput } from './core/types';
 import { createWorkspace, workspaceExtension } from './execution/workspace';
 import { DEFAULT_WEB_HOSTS, webExtension } from './web/tools';
+import { BillingClient } from './billing/control';
+import { guardedAI } from './billing/ai-binding';
+import { BillingBlocked } from './billing/policy';
 export interface Env {
   AGENTS: DurableObjectNamespace<MemoryAgent>; AI: Ai; MODEL: string;
   LOADER?: WorkerLoader;
+  BILLING: DurableObjectNamespace;
   WEB_ALLOWED_HOSTS?: string;
   /** Local-only switch. Real deployment always uses Workers AI. */
   LOCAL_TEST?: string;
@@ -31,31 +35,39 @@ export class MemoryAgent extends DurableObject<Env> {
   readonly bootId = crypto.randomUUID();
   readonly sql = durableObjectDriver(this.ctx.storage);
   readonly store = new DurableSqliteStore(this.sql);
+  readonly billing = new BillingClient(this.env.BILLING);
+  readonly billedAI = guardedAI(this.env.AI, this.billing);
   readonly memory = new HybridMemory({ store: this.store,
-    embeddings: this.env.LOCAL_TEST === 'true' ? undefined : new WorkersAIEmbeddings(this.env.AI as unknown as import('./embeddings/workers-ai').AIBinding),
-    summarizer: this.env.LOCAL_TEST === 'true' ? new ExtractiveSummarizer() : new WorkersAISummarizer(this.env.AI as unknown as import('./embeddings/workers-ai').AIBinding, this.env.MODEL),
+    beforeWrite: async input => {
+      if (new TextEncoder().encode(JSON.stringify(input)).length > 16384) throw new BillingBlocked('Memory exceeds billing-safe write size');
+      await this.billing.reserve({ memories: 1, storageBytes: new TextEncoder().encode(JSON.stringify(input)).length * 16 });
+    },
+    embeddings: this.env.LOCAL_TEST === 'true' ? undefined : new WorkersAIEmbeddings(this.billedAI as unknown as import('./embeddings/workers-ai').AIBinding),
+    summarizer: this.env.LOCAL_TEST === 'true' ? new ExtractiveSummarizer() : new WorkersAISummarizer(this.billedAI as unknown as import('./embeddings/workers-ai').AIBinding, this.env.MODEL),
   });
-  readonly jobs = new MemoryJobs(this.memory);
+  readonly jobs = new MemoryJobs(this.memory, this.billing);
   readonly local = this.env.LOCAL_TEST === 'true' ? localProvider() : undefined;
-  readonly ai = createAI({ binding: piAIBinding(this.env.AI) });
+  readonly ai = createAI({ binding: piAIBinding(this.billedAI) });
   readonly registry = createRegistry();
   readonly workspace = createWorkspace(this.ctx.storage, this.env.LOADER);
   readonly webHosts = this.env.WEB_ALLOWED_HOSTS?.split(',').map(host => host.trim()).filter(Boolean) ?? DEFAULT_WEB_HOSTS;
   readonly harness = new PiHarness({
     harness: async ({ storage, context }) => {
-      this.registry.install(memoryExtension(this.memory, () => this.jobs.enqueue()));
+      this.registry.install(memoryExtension(this.memory, () => this.jobs.enqueue(), () => this.billing.reserve({ tools: 1 })));
       await this.workspace.fs.mkdir('/workspace', { recursive: true });
-      this.registry.install(workspaceExtension(this.workspace, !!this.env.LOADER));
-      this.registry.install(webExtension(this.webHosts));
+      this.registry.install(workspaceExtension(this.workspace, !!this.env.LOADER, this.billing));
+      this.registry.install(webExtension(this.webHosts, this.billing));
       const models = createModels(); models.setProvider(this.local?.provider ?? this.ai.provider);
-      return Harness.open(storage, { models, registry: this.registry, settings: { retry: { enabled: true, maxRetries: 2, baseDelayMs: 1000 } }, onReport: () => console.warn('pi_report') }, context);
+      return Harness.open(storage, { models, registry: this.registry, settings: { retry: { enabled: false, maxRetries: 0 }, compaction: { enabled: false } }, onReport: () => console.warn('pi_report') }, context);
     },
-    defaults: { model: this.local?.getModel() ?? this.ai(this.env.MODEL), thinkingLevel: 'off' },
+    defaults: { model: this.local?.getModel() ?? this.ai(this.env.MODEL, { streamIdleTimeoutMs: 15000 }), thinkingLevel: 'off' },
   });
   readonly lifecycle = Lifecycle.install(this).use(this.harness).use(this.jobs);
   async onRequest(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
     try {
+      if (request.method === 'POST' && path === '/billing-stop') { await this.harness.session().abort(); return Response.json({ aborted: true }); }
+      await this.billing.assertRunning();
       if (request.method === 'GET' && path === '/events') return await operationStream(this, new URL(request.url).searchParams.get('operationId') ?? '');
       if (request.method === 'GET' && path === '/debug') return Response.json({ bootId: this.bootId, capabilities: { execution: this.env.LOADER ? 'isolated-javascript' : 'disabled-requires-worker-loader', workspace: '/workspace', webFetchHosts: this.webHosts, webSearch: false }, events: this.store.events(), nodes: this.store.nodes(), pending: this.memory.pending(), embeddingModels: this.sql.all('SELECT model,version,COUNT(*) AS count FROM hm_embeddings GROUP BY model,version'), localTest: this.env.LOCAL_TEST === 'true', transcript: await this.harness.messages(), epochs: this.sql.all('SELECT * FROM hm_epochs') });
       if (request.method === 'GET' && path === '/read') return Response.json(await this.memory.read(new URL(request.url).searchParams.get('id') ?? ''));
@@ -71,7 +83,7 @@ export class MemoryAgent extends DurableObject<Env> {
       }
       if (path === '/search') return Response.json(await this.memory.search(body as unknown as SearchInput));
       if (path === '/context') return Response.json(await this.memory.context(body as unknown as ContextInput));
-      if (path === '/compact') return Response.json(await this.memory.compact());
+      if (path === '/compact') return Response.json(await this.memory.compact({ maxWork: 8 }));
       if (path === '/chat') {
         if (typeof body.message !== 'string') throw new Error('message is required');
         const operationId = typeof body.operationId === 'string' ? body.operationId : crypto.randomUUID();
@@ -85,7 +97,7 @@ export class MemoryAgent extends DurableObject<Env> {
         const transcript = await session.messages();
         if (transcript.length) await retainTranscript(this.memory, transcript, await sha256(JSON.stringify(transcript)));
         await this.jobs.enqueue();
-        await this.memory.compact();
+        await this.memory.compact({ maxWork: 8 });
         const query = typeof body.query === 'string' ? body.query : '';
         const handoff = await this.memory.context({ query, maxTokens: 4000, includeRecent: true });
         await session.reset(handoff.text || undefined);
@@ -94,6 +106,7 @@ export class MemoryAgent extends DurableObject<Env> {
       }
       return new Response('Not found', { status: 404 });
     } catch (error) {
+      if (error instanceof BillingBlocked) return Response.json({ error: error.reason }, { status: 503 });
       // Return known validation errors only; never echo provider responses or submitted content.
       const message = error instanceof Error ? error.message : '';
       const safe = /^(Memory not found|Invalid (prompt|query|kind|namespace|idempotency|includeRecent)|Memory content|Idempotency key|operationId|maxTokens|limit must|Weights must|message is required|Unsupported remote|Cannot change model|This deployment supports|Images are not supported)/.test(message);

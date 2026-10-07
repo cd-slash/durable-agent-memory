@@ -1,13 +1,15 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "durable-agent-memory",
+  "preview_urls": false,
   "main": "src/index.ts",
   "compatibility_date": "2026-10-04",
   "compatibility_flags": ["nodejs_compat"],
-  "durable_objects": {"bindings": [{"name":"AGENTS","class_name":"MemoryAgent"}]},
-  "migrations": [{"tag":"v1","new_sqlite_classes":["MemoryAgent"]}],
+  "durable_objects": {"bindings": [{"name":"AGENTS","class_name":"MemoryAgent"},{"name":"BILLING","class_name":"BillingControl"}]},
+  "migrations": [{"tag":"v1","new_sqlite_classes":["MemoryAgent"]},{"tag":"v2","new_sqlite_classes":["BillingControl"]}],
   "ai": {"binding":"AI"},
   "worker_loaders": [{"binding":"LOADER"}],
   "vars": {"MODEL":"@cf/zai-org/glm-4.7-flash"},
-  "observability": {"enabled":true}
+  "limits": {"cpu_ms":50},
+  "observability": {"enabled":true,"head_sampling_rate":0.1}
 }

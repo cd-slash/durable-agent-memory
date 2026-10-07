@@ -8,6 +8,7 @@ export interface MemoryOptions {
   store: MemoryStore; embeddings?: EmbeddingProvider; summarizer?: MemorySummarizer;
   tokens?: TokenCounter; now?: () => number;
   score?: (signals: ScoreSignals, weights: ScoreWeights) => number;
+  beforeWrite?: (input: RememberInput) => Promise<void>;
 }
 export class HybridMemory {
   readonly store: MemoryStore;
@@ -27,6 +28,7 @@ export class HybridMemory {
     const metadata = input.metadata ?? {};
     const contentHash = await sha256(canonical({ content: input.content, kind, namespace, metadata }));
     const id = input.idempotencyKey ? 'e_' + await sha256(input.idempotencyKey) : 'e_' + crypto.randomUUID();
+    await this.options.beforeWrite?.(input);
     return this.store.append({ type: 'event', id, createdAt: this.now(), kind, namespace, content: input.content, metadata: JSON.parse(canonical(metadata)), contentHash });
   }
   async read(id: string): Promise<MemoryRecord> {

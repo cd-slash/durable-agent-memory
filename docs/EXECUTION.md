@@ -1,6 +1,6 @@
 # Hosted execution capabilities
 
-The T3 Pi bridge connects to the real hosted PiHarness. The current free-plan deployment provides durable file tools and page fetching. Cloudflare rejected hosted execution with error 10195 because Worker Loader requires Workers Paid. The sandbox implementation passes local runtime tests; it is not enabled on the hosted free-plan deployment.
+The T3 Pi bridge connects to the real hosted PiHarness. Workers Paid is now active. Hosted execution uses the guarded configuration with global quotas and an emergency stop. See [BILLING.md](BILLING.md) before deployment or live tests.
 
 The model tools are:
 
@@ -22,9 +22,9 @@ export default async function () {
 }
 ```
 
-There is no Linux shell, Python, package installation, arbitrary network from execution, or access to the T3 machine’s checkout. Workspace files are not automatically Git-synchronized. General web search is not enabled: no search-provider credential was configured. Page fetching defaults to `developers.cloudflare.com`, `github.com`, `raw.githubusercontent.com`, `en.wikipedia.org`. Administrators can set `WEB_ALLOWED_HOSTS` to a comma-separated list of vetted public hostnames. It replaces the default list. Do not configure internal/private hosts or treat website text as instructions.
+There is no Linux shell, Python, package installation, arbitrary network from execution, or access to the T3 machine’s checkout. Workspace files are not automatically Git-synchronized. General web search is not enabled: no search-provider credential was configured. Every tool/provider attempt is subject to the global billing stop and quotas; see BILLING.md. Page fetching defaults to `developers.cloudflare.com`, `github.com`, `raw.githubusercontent.com`, `en.wikipedia.org`. Administrators can set `WEB_ALLOWED_HOSTS` to a comma-separated list of vetted public hostnames. It replaces the default list. Do not configure internal/private hosts or treat website text as instructions.
 
-All API/tool entry points retain the existing bearer authentication. Execution receives no host environment or Cloudflare credentials. Maximum source/input/result is 32 KiB, stdio 16 KiB, capability requests/responses 64 KiB, total capability bytes 1 MiB, 100 capability calls, one concurrent execution and a 3-second default execution deadline (backend maximum 10 seconds). Direct file writes/edits are capped at 64 KiB. These are per-call limits, not a total storage/spend quota. Interrupted effectful calls are not automatically replayed and may have already changed files.
+All API/tool entry points retain the existing bearer authentication. Execution receives no host environment or Cloudflare credentials. Maximum source/input is 32 KiB, result 8 KiB, stdio 4 KiB, capability requests/responses 64 KiB, total capability bytes 128 KiB, 100 capability calls, one concurrent execution and a 3-second default execution deadline (backend maximum 10 seconds). Direct file writes/edits are capped at 64 KiB. Global call/estimated-neuron/storage quotas also apply; see BILLING.md. Interrupted effectful calls are not automatically replayed and may have already changed files.
 
 `GET /api/<agent>/debug` reports execution mode, workspace root and web capability hosts along with the transcript/tool results. It requires the same token. Use file tools for workspace inspection.
 
@@ -36,7 +36,7 @@ Enable [Workers Paid](https://dash.cloudflare.com/efceafa29432e7f5d5fc86703f78d8
 npm run deploy:execution
 ```
 
-This uses `wrangler.execution.jsonc`, which has the same Worker/DO/migrations and the additional Worker Loader binding. Existing data is retained. No new secret is required. Keep the two deployment configurations aligned when changing runtime settings. `npm run deploy` uses the free-plan-compatible default and disables execution. To run the sandbox locally:
+This uses `wrangler.execution.jsonc`, which has the same Worker/DO/migrations and the additional Worker Loader binding. Existing data is retained. No new secret is required. Keep the two deployment configurations aligned when changing runtime settings. `npm run deploy` now uses the guarded execution configuration; both configs retain billing controls. To run the sandbox locally:
 
 ```bash
 npm run dev -- --config wrangler.execution.jsonc --local --var LOCAL_TEST:true --var DEMO_TOKEN:local-testing-only

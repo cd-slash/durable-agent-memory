@@ -19,7 +19,7 @@ async function startWorker() {
   worker.stdout!.on('data', c => { logs += c; }); worker.stderr!.on('data', c => { logs += c; });
   for (let i = 0; i < 150; i++) {
     try { if ((await fetch(base + '/health')).ok) return; } catch {}
-    if (worker.exitCode !== null) throw new Error('Local worker exited');
+    if (worker.exitCode !== null) throw new Error('Local worker exited: ' + logs.slice(-3000));
     await new Promise(r => setTimeout(r, 200));
   }
   throw new Error('Local worker startup timed out');

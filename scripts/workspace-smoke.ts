@@ -1,13 +1,17 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 const port = 8794, token = 'local-workspace-test';
 const base = `http://127.0.0.1:${port}`;
+const persistence = mkdtempSync(join(tmpdir(), 'hm-runtime-test-'));
 let proc: ReturnType<typeof spawn> | undefined;
 let output = '';
 const agent = `workspace-test-${Date.now()}`;
 async function start() {
   output = '';
-  proc = spawn('node_modules/.bin/wrangler', ['dev', '--config', 'wrangler.execution.jsonc', '--local', '--port', String(port), '--var', 'LOCAL_TEST:true', '--var', `DEMO_TOKEN:${token}`], { stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+  proc = spawn('node_modules/.bin/wrangler', ['dev', '--config', 'wrangler.execution.jsonc', '--local', '--persist-to', persistence, '--port', String(port), '--var', 'LOCAL_TEST:true', '--var', `DEMO_TOKEN:${token}`], { stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   proc.stdout!.on('data', c => output += c); proc.stderr!.on('data', c => output += c);
   for (let i = 0; i < 150; i++) {
     try { if ((await fetch(base + '/health')).ok) return; } catch {}
@@ -22,7 +26,7 @@ async function stop() {
   process.kill(-p.pid!, 'SIGTERM'); await exited; proc = undefined;
 }
 async function api(path: string, body?: unknown, id = agent): Promise<any> {
-  const res = await fetch(`${base}/api/${id}/${path}`, { method: body ? 'POST' : 'GET', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const res = await fetch(`${base}/api/${id}/${path}`, { method: body ? 'POST' : 'GET', signal: AbortSignal.timeout(20000), headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
   assert.ok(res.ok, `${path}: HTTP ${res.status}`); return res.json();
 }
 async function tool(name: string, args: Record<string, unknown>, id = agent) {
@@ -37,6 +41,7 @@ async function tool(name: string, args: Record<string, unknown>, id = agent) {
 }
 try {
   await start();
+  const page = await (await fetch(base)).text(); assert.match(page, /id="billing-stop"/);
   let result = await tool('exec', { command: 'export default () => ({answer: 6 * 7})', cwd: '/workspace' });
   assert.ok(!result.isError, JSON.stringify(result)); assert.match(JSON.stringify(result.content), /42/);
   result = await tool('exec', { command: "import {writeFile,readFile} from 'node:fs/promises'; export default async () => {await writeFile('/workspace/proof.txt','persistent-marker'); return await readFile('/workspace/proof.txt','utf8');}", cwd: '/workspace' });
@@ -57,7 +62,35 @@ try {
   assert.ok(Date.now() - began < 15000, 'Execution deadline must bound nonterminating code');
   assert.match(JSON.stringify(result.content), /timeout|timed out|deadline|exceed|error/i);
   result = await tool('exec', { command: 'export default () => 7', cwd: '/workspace' }); assert.match(JSON.stringify(result.content), /7/);
+  const admin = async (action: string, body?: unknown) => {
+    const res = await fetch(`${base}/admin/billing/${action}`, { method: action === 'status' ? 'GET' : 'POST', signal: AbortSignal.timeout(20000), headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: res.status, body: await res.json() as any };
+  };
+  assert.equal((await fetch(`${base}/admin/billing/stop`, { method: 'POST' })).status, 401);
+  const usage = await admin('status'); assert.equal(usage.body.stopped, false);
+  assert.ok(usage.body.reservations.some((r: any) => r.kind === 'executions' && r.used > 0));
+  await api('submit', { message: 'slow bridge cancellation', operationId: crypto.randomUUID() });
+  assert.equal((await admin('stop')).body.stopped, true);
+  const denied = await fetch(`${base}/api/${agent}/chat`, { method: 'POST', signal: AbortSignal.timeout(20000), headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ message: 'Should be blocked' }) });
+  assert.equal(denied.status, 503);
+  await stop(); await start();
+  assert.equal((await admin('status')).body.stopped, true, 'Emergency stop survives Worker restart');
+  assert.equal((await admin('resume', { confirm: 'oops' })).status, 400);
+  assert.equal((await admin('status')).body.stopped, true);
+  assert.equal((await admin('resume', { confirm: 'RESUME BILLABLE WORK' })).body.stopped, false);
+  result = await tool('read', { path: '/workspace/proof.txt' }); assert.match(JSON.stringify(result.content), /persistent-marker/);
+  // Two existing agents plus at most 49 attempted names: the lifetime quota must be global.
+  let agentBlocked = false;
+  for (let i = 0; i < 49; i++) {
+    const res = await fetch(`${base}/api/object-quota-${i}/debug`, { signal: AbortSignal.timeout(20000), headers: { authorization: `Bearer ${token}` } });
+    if (res.status === 503) { agentBlocked = true; break; }
+    assert.equal(res.status, 200);
+  }
+  assert.ok(agentBlocked, 'New agent names must not bypass the project object quota');
+  assert.equal((await admin('status')).body.stopped, true);
+  console.log('PASS: lifetime object quota spans all agent IDs and latches global stop.');
+  console.log('PASS: authenticated emergency stop blocks new turns, persists after restart, aborts registered sessions best-effort, and requires explicit resume without deleting data.');
   assert.ok(!output.includes('hm_request_failed'), 'Unexpected request failure');
   console.log('PASS: actual Pi tool loop + WorkerLoader calculation, persistent files after workerd restart, DO isolation, host environment/path denial, blocked network, deadline, recovery after timeout.');
 } catch (error) { console.error(output.slice(-6000)); throw error; }
-finally { await stop(); }
+finally { await stop(); rmSync(persistence, { recursive: true, force: true }); }

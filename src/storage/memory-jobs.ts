@@ -1,20 +1,23 @@
 import { LifecycleCapability, type LifecycleJobContext, type LifecycleJobOutcome } from 'agents/lifecycle';
 import type { HybridMemory } from '../core/memory';
-/** Missing immutable nodes/vectors ARE the durable work ledger; the lifecycle job is only the wake. */
+import type { BillingClient } from '../billing/control';
+import { BillingBlocked } from '../billing/policy';
+/** Missing nodes remain the ledger. No infinite retries or auto-resume after safety stop. */
 export class MemoryJobs extends LifecycleCapability {
-  constructor(private readonly memory: HybridMemory) { super('hybrid-memory'); }
-  onStart(): Promise<void> | void { if (this.memory.pending()) return this.enqueue(); }
+  constructor(private readonly memory: HybridMemory, private readonly billing: BillingClient) { super('hybrid-memory'); }
+  // Startup must not automatically restart pending paid work after eviction/deployment.
   async enqueue(): Promise<void> {
-    await this.lifecycle.jobs.push({ id: 'hm-drain', fn: 'compact', time: Date.now(), singleflight: true, hungTimeoutSeconds: 120, recoveryLoop: true });
+    await this.billing.assertRunning();
+    await this.lifecycle.jobs.push({ id: 'hm-drain', fn: 'compact', time: Date.now(), singleflight: true, hungTimeoutSeconds: 120, recoveryLoop: false });
   }
   async onJob(_context: LifecycleJobContext): Promise<LifecycleJobOutcome> {
     try {
-      const result = await this.memory.compact({ maxWork: 8 });
-      return result.pending ? { rescheduleAt: Date.now() + 1000 } : undefined;
-    } catch {
-      // Never log raw memory, provider output, or credentials.
-      console.warn('hm_summary_retry');
-      return { rescheduleAt: Date.now() + 60000 };
+      await this.billing.assertRunning();
+      // One bounded batch per explicit enqueue. Pending work requires another explicit enqueue/compact.
+      await this.memory.compact({ maxWork: 4 });
+    } catch (error) {
+      console.warn(error instanceof BillingBlocked ? 'hm_billing_stopped' : 'hm_summary_paused');
     }
+    return undefined;
   }
 }

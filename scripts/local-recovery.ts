@@ -1,12 +1,16 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 const port = 8791, token = 'local-recovery-only';
 const base = `http://127.0.0.1:${port}`;
+const persistence = mkdtempSync(join(tmpdir(), 'hm-runtime-test-'));
 let proc: ReturnType<typeof spawn> | undefined;
 let output = '';
 async function start() {
   output = '';
-  proc = spawn('node_modules/.bin/wrangler', ['dev', '--local', '--port', String(port), '--var', 'LOCAL_TEST:true', '--var', `DEMO_TOKEN:${token}`], { stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+  proc = spawn('node_modules/.bin/wrangler', ['dev', '--local', '--persist-to', persistence, '--port', String(port), '--var', 'LOCAL_TEST:true', '--var', `DEMO_TOKEN:${token}`], { stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   proc.stdout!.on('data', chunk => { output += chunk; }); proc.stderr!.on('data', chunk => { output += chunk; });
   for (let attempt = 0; attempt < 150; attempt++) {
     try { if ((await fetch(base + '/health')).ok) return; } catch {}
@@ -46,4 +50,4 @@ try {
   }
   assert.ok(!output.includes('hm_request_failed') && !output.includes('pi_report'), 'Runtime reported an error');
   console.log('PASS: real SQLite Durable Object + PiHarness transcript, events and nodes survive workerd restart. Local model is explicitly scripted.');
-} finally { await stop(); }
+} finally { await stop(); rmSync(persistence, { recursive: true, force: true }); }

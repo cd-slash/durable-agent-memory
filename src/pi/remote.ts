@@ -22,7 +22,7 @@ export async function remoteRpc(agent: MemoryAgent, body: Record<string, unknown
         return { model, thinkingLevel: stream.snapshot.agent.thinkingLevel ?? 'off',
           isStreaming: !!stream.snapshot.run || stream.snapshot.inbox.length > 0, isCompacting: stream.snapshot.compactions.length > 0,
           pendingMessageCount: stream.snapshot.inbox.length, autoCompactionEnabled: false,
-          autoRetryEnabled: true, messageCount: rpcEntries(stream.snapshot.entries).length };
+          autoRetryEnabled: false, messageCount: rpcEntries(stream.snapshot.entries).length };
       } finally { await stream.stop(); }
     }
     case 'get_messages': return { messages: (await session.messages()).flatMap(e => e.model ?? []) };
@@ -69,6 +69,7 @@ export async function operationStream(agent: MemoryAgent, operationId: string): 
       const send = (value: unknown) => { if (!closed) controller.enqueue(encoder.encode(`data: ${JSON.stringify(value)}\n\n`)); };
       send({ type: 'snapshot', snapshot: events.snapshot });
       events.start(async batch => { send({ type: 'events', events: batch }); });
+      const deadline = setTimeout(() => waitAbort.abort(), 120000);
       heartbeat = setInterval(() => { if (!closed) controller.enqueue(encoder.encode(': heartbeat\n\n')); }, 15000);
       void (async () => {
         try {
@@ -77,6 +78,7 @@ export async function operationStream(agent: MemoryAgent, operationId: string): 
           send({ type: 'result', result, entries: await session.messages() });
         } catch { if (!closed) send({ type: 'error', message: 'Operation observer failed; reconnect with the same operationId' }); }
         finally {
+          clearTimeout(deadline);
           if (heartbeat) clearInterval(heartbeat);
           await events.stop();
           if (!closed) { closed = true; controller.close(); }

@@ -5,11 +5,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run billing:check -- --base "$BILLING_REVIEW_BASE"
+        env:
+          BILLING_REVIEW_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       - run: npm run check
       - run: npm run test:workspace
       - run: npm run test:recovery
