@@ -26,6 +26,7 @@ export const PROJECT_TOOLS = [
   "find",
   "grep",
   "exec",
+  "shell",
   "web_fetch",
   "team_board",
   "team_note",

@@ -16,6 +16,7 @@ import { sha256 } from './core/hierarchy';
 import { piAIBinding } from './pi/workers-ai-binding';
 import { remoteRpc, remoteSubmit, operationStream } from './pi/remote';
 import type { ContextInput, RememberInput, SearchInput } from './core/types';
+import { shellExtension } from './sandbox/extension';
 import { createWorkspace, workspaceExtension } from './execution/workspace';
 import { DEFAULT_WEB_HOSTS, webExtension } from './web/tools';
 import { BillingClient } from './billing/control';
@@ -26,6 +27,8 @@ import { turnBudgetExtension, reservePreparedTurnRequest } from './pi/turn-budge
 export interface Env {
   AGENTS: DurableObjectNamespace<MemoryAgent>; AI: Ai; MODEL: string;
   LOADER?: WorkerLoader;
+  SANDBOX?: DurableObjectNamespace;
+  SANDBOX_ENABLED?: string;
   BILLING: DurableObjectNamespace;
   WEB_ALLOWED_HOSTS?: string;
   /** Local-only switch. Real deployment always uses Workers AI. */
@@ -52,6 +55,7 @@ export class MemoryAgent extends DurableObject<Env> {
   readonly jobs = new MemoryJobs(this.memory, this.billing);
   readonly local = this.env.LOCAL_TEST === 'true' ? localProvider() : undefined;
   readonly ai = createAI({ binding: piAIBinding(guardedAI(this.env.AI, this.billing, () => reservePreparedTurnRequest(this.sql))) });
+  readonly codingSandbox = this.env.SANDBOX?.getByName('project-coding-v1');
   readonly registry = createRegistry();
   readonly workspace = createWorkspace(this.ctx.storage, this.env.LOADER);
   readonly webHosts = this.env.WEB_ALLOWED_HOSTS?.split(',').map(host => host.trim()).filter(Boolean) ?? DEFAULT_WEB_HOSTS;
@@ -62,6 +66,7 @@ export class MemoryAgent extends DurableObject<Env> {
       this.registry.install(guardProjectTools(workspaceExtension(this.workspace, !!this.env.LOADER, this.billing), this));
       this.registry.install(guardProjectTools(webExtension(this.webHosts, this.billing), this));
       this.registry.install(guardProjectTools(projectExtension(this), this));
+      if (this.env.SANDBOX && this.env.SANDBOX_ENABLED === 'true') this.registry.install(guardProjectTools(shellExtension(this), this));
       this.registry.install(turnBudgetExtension(this.sql));
       const models = createModels(); models.setProvider(this.local ? new Proxy(this.local.provider, { get: (target, key) => {
         if (key === 'streamSimple') return (...args: unknown[]) => { reservePreparedTurnRequest(this.sql); return Reflect.apply(target.streamSimple, target, args); };
@@ -94,7 +99,7 @@ export class MemoryAgent extends DurableObject<Env> {
         } catch { return Response.json({pending:true}); }
       }
       if (request.method === 'GET' && path === '/events') return await operationStream(this, new URL(request.url).searchParams.get('operationId') ?? '');
-      if (request.method === 'GET' && path === '/debug') return Response.json({ bootId: this.bootId, capabilities: { execution: this.env.LOADER ? 'isolated-javascript' : 'disabled-requires-worker-loader', workspace: '/workspace', webFetchHosts: this.webHosts, webSearch: false }, events: this.store.events(), nodes: this.store.nodes(), pending: this.memory.pending(), embeddingModels: this.sql.all('SELECT model,version,COUNT(*) AS count FROM hm_embeddings GROUP BY model,version'), localTest: this.env.LOCAL_TEST === 'true', transcript: await this.harness.messages(), epochs: this.sql.all('SELECT * FROM hm_epochs') });
+      if (request.method === 'GET' && path === '/debug') return Response.json({ bootId: this.bootId, capabilities: { execution: this.env.LOADER ? 'isolated-javascript' : 'disabled-requires-worker-loader', workspace: '/workspace', shell: this.env.SANDBOX && this.env.SANDBOX_ENABLED === 'true' ? 'cloudflare-linux-private-checkpoint' : 'disabled-pending-cost-approval', webFetchHosts: this.webHosts, webSearch: false }, events: this.store.events(), nodes: this.store.nodes(), pending: this.memory.pending(), embeddingModels: this.sql.all('SELECT model,version,COUNT(*) AS count FROM hm_embeddings GROUP BY model,version'), localTest: this.env.LOCAL_TEST === 'true', transcript: await this.harness.messages(), epochs: this.sql.all('SELECT * FROM hm_epochs') });
       if (request.method === 'GET' && path === '/read') return Response.json(await this.memory.read(new URL(request.url).searchParams.get('id') ?? ''));
       if (request.method === 'GET' && path === '/expand') return Response.json(await this.memory.expand(new URL(request.url).searchParams.get('id') ?? ''));
       if (request.method !== 'POST') return new Response('Not found', { status: 404 });

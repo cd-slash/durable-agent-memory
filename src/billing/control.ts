@@ -2,12 +2,16 @@ import { DurableObject } from 'cloudflare:workers';
 import { durableObjectDriver } from '../storage/durable-sqlite';
 import { ProjectStore } from '../multiplayer/store';
 import { projectControl } from '../multiplayer/control';
+import { SandboxLeases } from '../sandbox/leases';
+import { SANDBOX } from '../sandbox/policy';
 import { BillingLedger } from './ledger';
 import { BillingBlocked, MAX_AGENTS, type Reservation } from './policy';
-export class BillingControl extends DurableObject<{ AGENTS: DurableObjectNamespace }> {
+interface ControlEnv { AGENTS: DurableObjectNamespace; SANDBOX?: DurableObjectNamespace; SANDBOX_ENABLED?: string }
+export class BillingControl extends DurableObject<ControlEnv> {
   readonly projects = new ProjectStore(durableObjectDriver(this.ctx.storage));
   readonly ledger = new BillingLedger(durableObjectDriver(this.ctx.storage));
-  constructor(ctx: DurableObjectState, env: { AGENTS: DurableObjectNamespace }) {
+  readonly sandbox = new SandboxLeases(durableObjectDriver(this.ctx.storage), this.ledger);
+  constructor(ctx: DurableObjectState, env: ControlEnv) {
     super(ctx, env);
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS billing_agents(name TEXT PRIMARY KEY,last_turn INTEGER NOT NULL)');
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS billing_known_agents(name TEXT PRIMARY KEY)');
@@ -20,7 +24,24 @@ export class BillingControl extends DurableObject<{ AGENTS: DurableObjectNamespa
     const action = new URL(request.url).pathname;
     try {
       if (action.startsWith('/team/') && request.method === 'POST') return projectControl(request, this.projects, this.ledger);
-      if (action === '/status' && request.method === 'GET') return Response.json(this.ledger.status());
+      if (action === '/status' && request.method === 'GET') return Response.json({ ...this.ledger.status(), sandbox: { enabled: this.env.SANDBOX_ENABLED === 'true', lease: this.sandbox.status() ?? null, limits: SANDBOX } });
+      if (action.startsWith('/sandbox/')) {
+        if (action === '/sandbox/status' && request.method === 'GET') return Response.json({ lease: this.sandbox.status() ?? null });
+        if (request.method !== 'POST') return new Response('Not found', { status: 404 });
+        const body = await request.json() as {agent?:string;operationId?:string;token?:string;bytes?:number};
+        if (action === '/sandbox/failure') {this.ledger.stop('Sandbox cleanup unconfirmed; explicit owner stop/inspection required'); return Response.json({stopped:true});}
+        if (action === '/sandbox/release' && typeof body.token === 'string') {this.sandbox.release(body.token);return Response.json({released:true});}
+        if (this.env.SANDBOX_ENABLED !== 'true' || !this.env.SANDBOX) throw new BillingBlocked('Sandbox disabled pending owner cost approval');
+        if (action === '/sandbox/acquire') {
+          if (!body.agent || !/^[a-zA-Z0-9_-]{1,64}$/.test(body.agent) || !body.operationId || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.operationId) || ![...this.ctx.storage.sql.exec('SELECT name FROM billing_known_agents WHERE name=?',body.agent)].length) throw new BillingBlocked('Unknown sandbox agent');
+          const projectAgent = this.projects.agent(body.agent);
+          if (projectAgent && !projectAgent.allowedTools.includes('shell')) throw new BillingBlocked('Shell denied by project policy');
+          return Response.json(this.sandbox.acquire(body.agent,body.operationId));
+        }
+        if (action === '/sandbox/active' && body.token) {this.sandbox.assertActive(body.token);return Response.json({allowed:true});}
+        if (action === '/sandbox/network' && body.token) {this.sandbox.network(body.token,body.bytes!);return Response.json({allowed:true});}
+        return new Response('Not found',{status:404});
+      }
       if (action === '/sessions' && request.method === 'GET') return Response.json({ sessions: [...this.ctx.storage.sql.exec<{name: string;last_turn: number}>('SELECT name,last_turn FROM billing_agents ORDER BY last_turn DESC LIMIT 50')] });
       if (action === '/inspect' && request.method === 'GET') {
         const agent = new URL(request.url).searchParams.get('agent') ?? '';
@@ -28,7 +49,7 @@ export class BillingControl extends DurableObject<{ AGENTS: DurableObjectNamespa
         return this.env.AGENTS.get(this.env.AGENTS.idFromName(agent)).fetch('https://agent/billing-inspect');
       }
       if (request.method !== 'POST') return new Response('Not found', { status: 404 });
-      if (action === '/stop') { const alreadyStopped = this.ledger.status().stopped; this.ledger.stop('Owner emergency stop'); if (!alreadyStopped) this.ctx.waitUntil(this.abortRegistered()); return Response.json({ ...this.ledger.status(), cancellation: 'bounded best-effort abort requested for registered agents' }); }
+      if (action === '/stop') { const alreadyStopped = this.ledger.status().stopped; this.ledger.stop('Owner emergency stop'); if (!alreadyStopped) this.ctx.waitUntil(this.abortRegistered()); if (this.env.SANDBOX) this.ctx.waitUntil(this.env.SANDBOX.getByName('project-coding-v1').fetch('https://sandbox/stop',{method:'POST'}).then(()=>{}).catch(()=>{})); return Response.json({ ...this.ledger.status(), cancellation: 'bounded best-effort agent abort and singleton container destruction requested' }); }
       if (action === '/resume') {
         const body = await request.json() as { confirm?: string };
         if (body.confirm !== 'RESUME BILLABLE WORK') return Response.json({ error: 'Explicit resume confirmation required' }, { status: 400 });

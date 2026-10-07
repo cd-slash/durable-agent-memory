@@ -6,6 +6,8 @@ export const BILLING_LIMITS = {
   neurons: { day: 5000, month: 50000 },
   tools: { day: 100, month: 1000 },
   executions: { day: 10, month: 50 },
+  sandboxSeconds: { day: 270, month: 900 },
+  sandboxNetworkBytes: { day: 24 * 1048576, month: 80 * 1048576 },
   memories: { day: 20, month: 200 },
   storageBytes: { day: 16 * 1048576, month: 128 * 1048576 },
 } as const;

@@ -90,3 +90,7 @@ The service is enabled under unchanged quotas. Test delta: three turns, nine AI 
 The multiplayer build retains the same singleton quotas and namespace. Project-scoped editor/viewer tokens, immutable per-agent tool policies, shared tasks/notes and two actual Pi agents were verified locally and hosted. A builder published an exact handoff, and a separate reviewer retrieved it. The one finite hosted check used six AI calls, two turns, two tools and 679 reserved neurons, with zero executions; total reserved neurons reached 3362/5000 for 2026-10-07. No quotas were increased or usage reset. The service remains enabled.
 
 Signed project credentials are checked offline before SQLite authorization to avoid random-token DO lookup amplification. They expire after thirty days and can be rotated under the same member id. Revocation still checks SQLite and stays available to the owner while stopped. Valid-token abuse, Worker ingress/crypto CPU and retained storage remain billable. See [multiplayer operations](MULTIPLAYER.md).
+
+## Prepared Linux sandbox (not activated)
+
+[Sandbox costs and activation](SANDBOX.md) specify separate proposed limits, one durable global slot, fixed container lifetime, bounded SQLite checkpoints and emergency destruction. These are not deployed container resources. Existing quotas are retained, and every shell attempt also consumes the existing execution/tool/storage budgets. Standard deployment does not activate containers. New paid infrastructure requires explicit separate owner approval.

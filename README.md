@@ -180,3 +180,5 @@ Use a unique stable `operationId` per chat request for retry safety. `chat` wait
 **Pi Durable integration:** actual SDK-backed transcript, model loop, inbox/tasks and lifecycle recovery. OptMem and OpenViking APIs/CLIs are not implemented, and no compatibility with those products is claimed.
 
 This is an inspectable v1. Before production: add per-user authorization and quotas, pagination/retention policy, realistic retrieval/summary quality evaluation, exact model tokenizer integration, durable export/backup workflows, and large-corpus indexing. Exercise provider failures and eviction during live tools against the target Cloudflare account. PiHarness remains beta; pin dependencies and re-run prefix/recovery tests when upgrading.
+
+Cloudflare Linux shell/Node/npm/Python/Git support is prepared as an opt-in coding sandbox. It remains disabled pending a separate billing review and approved activation; see [sandbox architecture, costs and setup](docs/SANDBOX.md). The deployed demo continues to use its existing JavaScript workspace.

@@ -20,3 +20,15 @@ jobs:
       - run: npm run test:recovery
       - run: npm run test:bridge
       - run: npm run test:multiplayer
+  sandbox-image:
+    # Public runner image test only: no Cloudflare token, application or paid sandbox.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: bash scripts/test-sandbox-image.sh

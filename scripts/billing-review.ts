@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
+import { SANDBOX } from '../src/sandbox/policy';
 import { BILLING_LIMITS, MAX_AGENTS, MAX_STORAGE_RESERVATION } from '../src/billing/policy';
 const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
 const baseIndex = process.argv.indexOf('--base');
@@ -25,7 +26,7 @@ if (changed.length) {
     assert.ok(!/\b(TODO|TBD)\b/.test(text), 'Billing reviews must describe actual evidence');
   }
 }
-for (const file of ['wrangler.jsonc', 'wrangler.execution.jsonc']) {
+for (const file of ['wrangler.jsonc', 'wrangler.execution.jsonc', 'wrangler.sandbox.jsonc']) {
   const config = JSON.parse(readFileSync(file, 'utf8'));
   assert.ok(config.durable_objects.bindings.some((b: any) => b.name === 'BILLING' && b.class_name === 'BillingControl'), 'Global billing binding required');
   assert.ok(config.migrations.some((m: any) => m.new_sqlite_classes?.includes('BillingControl')), 'Billing migration required');
@@ -40,3 +41,12 @@ assert.ok(MAX_AGENTS <= 50 && MAX_STORAGE_RESERVATION <= 128 * 1048576);
 assert.ok(BILLING_LIMITS.storageBytes.day <= 16 * 1048576);
 assert.ok(!readFileSync('.github/workflows/check.yml','utf8').includes('test:hosted'), 'CI must not run paid tests');
 console.log(`PASS: billing policy/config checks; ${changed.length} changed paths, ${reviews.length} new documented risk reviews. This is a review gate, not a proof of zero billing risk.`);
+
+const sandboxConfig = JSON.parse(readFileSync('wrangler.sandbox.jsonc','utf8'));
+assert.equal(sandboxConfig.vars.SANDBOX_ENABLED, 'false', 'Sandbox stays opt-in; activation requires explicit deployment confirmation');
+assert.equal(sandboxConfig.containers.length,1);
+assert.equal(sandboxConfig.containers[0].scheduling_policy,'durable_object');
+assert.ok(SANDBOX.leaseMs <= 90000 && SANDBOX.maxCommandMs <= 30000 && SANDBOX.containerLifetimeSeconds <= 75);
+assert.ok(SANDBOX.checkpointBytes <= 2*1048576 && SANDBOX.networkBytes <= 8*1048576);
+assert.ok(BILLING_LIMITS.sandboxSeconds.day <= 270 && BILLING_LIMITS.sandboxSeconds.month <= 900);
+assert.ok(BILLING_LIMITS.sandboxNetworkBytes.month <= 80*1048576);

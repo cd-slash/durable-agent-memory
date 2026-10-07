@@ -1,3 +1,6 @@
+import { cappedBody } from './sandbox/network';
+import { validateShell, type ShellInput } from './sandbox/policy';
+import { within } from './sandbox/deadline';
 import { verifyCredential } from './multiplayer/credentials';
 import { multiplayerUI } from './multiplayer/ui';
 import type { Env } from './agent';
@@ -6,6 +9,7 @@ import { projectRoutes, teamCall } from './multiplayer/routes';
 import { debugUI } from './ui';
 export { MemoryAgent } from './agent';
 export { BillingControl } from './billing/control';
+export { CodingSandbox, SandboxEgress } from './sandbox/container';
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -28,6 +32,27 @@ export default {
       const body = action === 'resume' ? await request.text() : undefined;
       if (body && body.length > 200) return new Response('Payload too large', { status: 413 });
       return control.fetch('https://billing/' + action + (action === 'inspect' ? url.search : ''), { method: request.method, ...(body ? { body } : {}) });
+    }
+    if (url.pathname === '/admin/sandbox/status') {
+      if (!owner) return Response.json({error:'Owner access required'},{status:403});
+      if (request.method !== 'GET') return new Response('Method not allowed',{status:405});
+      if (!env.SANDBOX) return Response.json({enabled:false,message:'Container infrastructure has not been activated'});
+      return env.SANDBOX.getByName('project-coding-v1').fetch('https://sandbox/status');
+    }
+    if (url.pathname === '/admin/sandbox/run') {
+      if (!owner) return Response.json({error:'Owner access required'},{status:403});
+      if (request.method !== 'POST') return new Response('Method not allowed',{status:405});
+      if (!env.SANDBOX || env.SANDBOX_ENABLED !== 'true') return Response.json({error:'Sandbox not activated'},{status:503});
+      try {
+        const bytes = await cappedBody(request.body as ReadableStream<Uint8Array>|null,20000,AbortSignal.timeout(5000));
+        const input = JSON.parse(new TextDecoder().decode(bytes)) as ShellInput;
+        validateShell(input);
+        const permit = await control.fetch('https://billing/reserve',{method:'POST',body:JSON.stringify({requests:1,storageBytes:4096+bytes.length*16})});
+        if (!permit.ok) return Response.json({error:'Billing stop or request/storage quota reached'},{status:503});
+        const admitted = await control.fetch('https://billing/agent',{method:'POST',body:JSON.stringify({agent:input.agent})});
+        if (!admitted.ok) return admitted;
+        return await within(env.SANDBOX.getByName('project-coding-v1').fetch('https://sandbox/run',{method:'POST',body:JSON.stringify(input)}),105000);
+      } catch { return Response.json({error:'Sandbox request invalid, interrupted or denied; no automatic retry'},{status:503}); }
     }
     const agentMatch = url.pathname.match(/^\/api\/([a-zA-Z0-9_-]{1,64})\//);
     if (!owner) {

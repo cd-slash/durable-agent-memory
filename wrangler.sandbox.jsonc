@@ -1,0 +1,77 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "durable-agent-memory",
+  "preview_urls": false,
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-04",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AGENTS",
+        "class_name": "MemoryAgent"
+      },
+      {
+        "name": "BILLING",
+        "class_name": "BillingControl"
+      },
+      {
+        "name": "SANDBOX",
+        "class_name": "CodingSandbox"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "MemoryAgent"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "BillingControl"
+      ]
+    },
+    {
+      "tag": "v3-coding-sandbox",
+      "new_sqlite_classes": [
+        "CodingSandbox"
+      ]
+    }
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "worker_loaders": [
+    {
+      "binding": "LOADER"
+    }
+  ],
+  "vars": {
+    "MODEL": "@cf/zai-org/glm-4.7-flash",
+    "SANDBOX_ENABLED": "false"
+  },
+  "limits": {
+    "cpu_ms": 50
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  },
+  "containers": [
+    {
+      "class_name": "CodingSandbox",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "coding": {
+          "dockerfile": "./sandbox/Dockerfile",
+          "build_context": "."
+        }
+      }
+    }
+  ]
+}

@@ -263,6 +263,11 @@ try {
     503,
   );
   assert.equal((await api("/admin/billing/status")).stopped, true);
+  assert.deepEqual(await api('/admin/sandbox/status'), {enabled:false,message:'Container infrastructure has not been activated'});
+  assert.equal((await request('/admin/sandbox/status',undefined,viewer.token)).status,403);
+  assert.equal((await request('/admin/sandbox/run',{agent:a.id,operationId:'not-enabled',command:'true'},viewer.token)).status,403);
+  assert.equal((await request('/admin/sandbox/run',{agent:a.id,operationId:'not-enabled',command:'true'})).status,503);
+  assert.equal((await api('/admin/billing/status')).sandbox.enabled,false);
   await api('/projects/test/revoke',{id:viewer.id});
   assert.equal((await request('/projects/test/board',undefined,viewer.token)).status,403);
   await stop();

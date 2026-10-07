@@ -31,7 +31,10 @@
     "billing:disable-endpoint": "python3 scripts/disable-worker.py",
     "test:hosted-billing": "tsx scripts/hosted-billing-smoke.ts",
     "test:multiplayer": "tsx scripts/multiplayer-smoke.ts",
-    "test:hosted-multiplayer": "tsx scripts/hosted-multiplayer-smoke.ts"
+    "test:hosted-multiplayer": "tsx scripts/hosted-multiplayer-smoke.ts",
+    "deploy:sandbox": "npm run billing:check && tsx scripts/deploy-sandbox.ts",
+    "test:sandbox": "vitest run test/sandbox.test.ts",
+    "test:hosted-sandbox": "tsx scripts/hosted-sandbox-smoke.ts"
   },
   "dependencies": {
     "@cloudflare/computer": "0.4.1",
