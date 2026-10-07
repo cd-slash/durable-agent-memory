@@ -2,6 +2,7 @@ import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { ModelThinkingLevel } from '@earendil-works/pi-ai';
 import type { EntryRecord } from '@earendil-works/pi-durable';
 import type { MemoryAgent } from '../agent';
+import { projectSnapshot } from '../multiplayer/extension';
 import { prepareTurn } from './extension';
 
 /** Coding-agent RPC projection. Pi entries remain the authoritative records. */
@@ -50,7 +51,9 @@ export async function remoteRpc(agent: MemoryAgent, body: Record<string, unknown
       // The public underlying Harness provides configuration not wrapped by PiSession.
       await (await (await agent.harness.pi()).root(BACKGROUND_CONTEXT)).configure({ thinkingLevel: body.level as ModelThinkingLevel }, BACKGROUND_CONTEXT);
       return { level: body.level };
-    case 'abort': return { aborted: await session.abort() };
+    case 'abort':
+      if (body.operationId !== undefined && (typeof body.operationId !== 'string' || !body.operationId || body.operationId.length > 512)) throw new Error('Invalid prompt operationId');
+      return { aborted: await session.abort(body.operationId as string | undefined) };
     default: throw new Error('Unsupported remote RPC command');
   }
 }
@@ -89,10 +92,10 @@ export async function operationStream(agent: MemoryAgent, operationId: string): 
   });
   return new Response(body, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', 'x-content-type-options': 'nosniff' } });
 }
-export async function remoteSubmit(agent: MemoryAgent, body: Record<string, unknown>) {
+export async function remoteSubmit(agent: MemoryAgent, body: Record<string, unknown>, actor = 'owner') {
   if (typeof body.message !== 'string' || typeof body.operationId !== 'string') throw new Error('Invalid prompt or operationId');
   if (body.images !== undefined) throw new Error('Images are not supported by this remote deployment');
   if (body.whenBusy !== undefined && !['steer', 'followUp'].includes(String(body.whenBusy))) throw new Error('Invalid prompt mode');
-  const frozen = await prepareTurn(agent.memory, agent.sql, body.message, body.operationId);
+  const frozen = await prepareTurn(agent.memory, agent.sql, body.message, body.operationId, {}, await projectSnapshot(agent), actor);
   return agent.harness.session().submit(frozen.input, { operationId: body.operationId, whenBusy: body.whenBusy as 'steer' | 'followUp' | undefined });
 }

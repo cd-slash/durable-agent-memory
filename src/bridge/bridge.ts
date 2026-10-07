@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { RpcProjector, type RpcRecord } from './projector';
 import type { EntryRecord, SnapshotEvent, AgentEvent } from '@earendil-works/pi-durable';
-export interface BridgeOptions { url: string; token: string; sessionsDir: string; emit: (event: RpcRecord) => void; fetch?: typeof fetch; toolsDisabled?: boolean }
+export interface BridgeOptions { url: string; token: string; sessionsDir: string; emit: (event: RpcRecord) => void; fetch?: typeof fetch; toolsDisabled?: boolean; agentId?: string }
 interface Manifest { version: 1; endpoint: string; agent: string; name?: string; inFlight?: { operationId: string; promptHash: string; baseline: string[] } }
 export class DurableRpcBridge {
   private manifest!: Manifest;
@@ -14,6 +14,7 @@ export class DurableRpcBridge {
     const url = new URL(options.url);
     if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname))) throw new Error('Bridge endpoint must use HTTPS');
     if (url.username || url.password || url.search || url.hash) throw new Error('Invalid bridge endpoint');
+    if (options.agentId && !/^mp-[a-f0-9-]{36}$/.test(options.agentId)) throw new Error('Invalid session project agent');
     options.url = url.origin;
     mkdirSync(options.sessionsDir, { recursive: true, mode: 0o700 });
     this.fetcher = options.fetch ?? fetch;
@@ -21,9 +22,9 @@ export class DurableRpcBridge {
   }
   get sessionFile() { return this.path; }
   private newSession() {
-    const agent = `t3-${randomUUID()}`;
+    const agent = this.options.agentId ?? `t3-${randomUUID()}`;
     this.manifest = { version: 1, endpoint: this.options.url, agent };
-    this.path = join(resolve(this.options.sessionsDir), `${agent}.json`);
+    this.path = join(resolve(this.options.sessionsDir), `${agent}-${randomUUID()}.json`);
     this.save();
   }
   private save() { writeFileSync(this.path, JSON.stringify(this.manifest), { mode: 0o600 }); }
@@ -31,7 +32,7 @@ export class DurableRpcBridge {
     const actual = realpathSync(path), root = realpathSync(this.options.sessionsDir);
     if (!actual.startsWith(root + sep)) throw new Error('Session manifest must be inside the bridge sessions directory');
     const manifest = JSON.parse(readFileSync(actual, 'utf8')) as Manifest;
-    if (manifest.version !== 1 || manifest.endpoint !== this.options.url || !/^t3-[a-f0-9-]{36}$/.test(manifest.agent)) throw new Error('Invalid session manifest or endpoint mismatch');
+    if (manifest.version !== 1 || manifest.endpoint !== this.options.url || !/^(t3|mp)-[a-f0-9-]{36}$/.test(manifest.agent) || (this.options.agentId !== undefined && manifest.agent !== this.options.agentId)) throw new Error('Invalid session manifest or endpoint mismatch');
     if (manifest.inFlight && (typeof manifest.inFlight.operationId !== 'string' || !/^[a-f0-9]{64}$/.test(manifest.inFlight.promptHash) || !Array.isArray(manifest.inFlight.baseline))) throw new Error('Invalid session pending operation');
     this.manifest = manifest; this.path = actual;
   }
@@ -87,7 +88,7 @@ export class DurableRpcBridge {
         }
         case 'new_session': case 'switch_session': {
           if (this.active || await this.busy()) throw new Error('Cannot change sessions while a run is active');
-          if (command.type === 'new_session') this.newSession();
+          if (command.type === 'new_session') { if(this.options.agentId) throw new Error('Invalid session: this bridge is pinned to a shared project agent'); this.newSession(); }
           else { if (typeof command.sessionPath !== 'string') throw new Error('sessionPath is required'); this.switchSession(command.sessionPath); }
           this.response(command, { cancelled: false }); return;
         }

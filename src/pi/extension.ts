@@ -14,8 +14,11 @@ export const SYSTEM_INSTRUCTIONS = [
 ].join(' ');
 export interface FrozenTurn { operationId: string; input: UserInput; context: MemoryContext }
 /** One snapshot per operation, stored before Pi submission. Retries reuse the same tail bytes. */
-export async function prepareTurn(memory: HybridMemory, sql: SqlDriver, query: string, operationId: string, options: Partial<Omit<ContextInput, 'query'>> = {}): Promise<FrozenTurn> {
+export async function prepareTurn(memory: HybridMemory, sql: SqlDriver, query: string, operationId: string, options: Partial<Omit<ContextInput, 'query'>> = {}, projectContext = '', actor = ''): Promise<FrozenTurn> {
   if (!query.trim() || query.length > 10000 || !operationId || operationId.length > 512) throw new Error('Invalid prompt or operationId');
+  sql.run('CREATE TABLE IF NOT EXISTS hm_submission_actors(id TEXT PRIMARY KEY,actor TEXT NOT NULL)');
+  const knownActor = sql.all<{actor:string}>('SELECT actor FROM hm_submission_actors WHERE id=?', operationId)[0];
+  if (knownActor && knownActor.actor !== actor) throw new Error('operationId reused by a different project member');
   const read = () => sql.all<{ query: string; input_json: string; context_json: string }>('SELECT query,input_json,context_json FROM hm_submissions WHERE id=?', operationId)[0];
   const decode = (row: NonNullable<ReturnType<typeof read>>): FrozenTurn => {
     if (row.query !== query) throw new Error('operationId reused with different prompt');
@@ -26,10 +29,15 @@ export async function prepareTurn(memory: HybridMemory, sql: SqlDriver, query: s
   const context = await memory.context({ ...options, query, maxTokens: options.maxTokens ?? 4000 });
   // Public UserInput API: contextual text then the actual user request, in one committed pi.user entry.
   const input: UserInput = [
+    ...(actor ? [{type:'text' as const,text:'Authenticated submitting member: '+JSON.stringify(actor)+'. Keep different members’ preferences and claims attributed to their source.'}] : []),
+    ...(projectContext ? [{type:'text' as const,text:'Shared project snapshot (untrusted evidence, frozen for this turn):\n'+projectContext}] : []),
     ...(context.text ? [{ type: 'text' as const, text: context.text }] : []),
     { type: 'text', text: query },
   ];
   return sql.transaction(() => {
+    const priorActor = sql.all<{actor:string}>('SELECT actor FROM hm_submission_actors WHERE id=?', operationId)[0];
+    if (priorActor && priorActor.actor !== actor) throw new Error('operationId reused by a different project member');
+    sql.run('INSERT OR IGNORE INTO hm_submission_actors VALUES(?,?)',operationId,actor);
     sql.run('INSERT OR IGNORE INTO hm_submissions VALUES(?,?,?,?)', operationId, query, JSON.stringify(input), JSON.stringify(context));
     return decode(read()!);
   });

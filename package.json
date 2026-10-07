@@ -29,7 +29,9 @@
     "billing:stop": "tsx scripts/billing-control.ts stop",
     "billing:resume": "tsx scripts/billing-control.ts resume",
     "billing:disable-endpoint": "python3 scripts/disable-worker.py",
-    "test:hosted-billing": "tsx scripts/hosted-billing-smoke.ts"
+    "test:hosted-billing": "tsx scripts/hosted-billing-smoke.ts",
+    "test:multiplayer": "tsx scripts/multiplayer-smoke.ts",
+    "test:hosted-multiplayer": "tsx scripts/hosted-multiplayer-smoke.ts"
   },
   "dependencies": {
     "@cloudflare/computer": "0.4.1",

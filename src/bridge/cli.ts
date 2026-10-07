@@ -9,10 +9,10 @@ if (args.includes('--version') || args.includes('-v')) {
 } else {
   try {
     const configPath = process.env.PI_DURABLE_CONFIG ?? join(homedir(), '.config/durable-agent-memory/bridge.json');
-    const config = JSON.parse(readFileSync(configPath, 'utf8')) as { url: string; tokenFile: string; sessionsDir?: string };
+    const config = JSON.parse(readFileSync(configPath, 'utf8')) as { url: string; tokenFile: string; sessionsDir?: string; agentId?: string };
     const emit = (event: Record<string, unknown>) => process.stdout.write(JSON.stringify(event) + '\n');
     const sessionIndex = args.indexOf('--session');
-    const bridge = new DurableRpcBridge({ url: config.url, token: readFileSync(config.tokenFile, 'utf8').trim(), toolsDisabled: args.includes('--no-tools'), sessionsDir: config.sessionsDir ?? join(homedir(), '.local/state/durable-agent-memory/sessions'), emit }, sessionIndex < 0 ? undefined : args[sessionIndex + 1]);
+    const bridge = new DurableRpcBridge({ url: config.url, agentId: config.agentId, token: readFileSync(config.tokenFile, 'utf8').trim(), toolsDisabled: args.includes('--no-tools'), sessionsDir: config.sessionsDir ?? join(homedir(), '.local/state/durable-agent-memory/sessions'), emit }, sessionIndex < 0 ? undefined : args[sessionIndex + 1]);
     if (!args.includes('--mode') || args[args.indexOf('--mode') + 1] !== 'rpc') throw new Error('Use --mode rpc');
     // T3 injects a local extension. It cannot execute inside the remote Worker.
     if (args.includes('--extension') || args.includes('-e')) process.stderr.write('Pi Durable bridge: local CLI extensions are unavailable; remote tools are defined in the Worker.\n');

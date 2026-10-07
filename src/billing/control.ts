@@ -1,8 +1,11 @@
 import { DurableObject } from 'cloudflare:workers';
 import { durableObjectDriver } from '../storage/durable-sqlite';
+import { ProjectStore } from '../multiplayer/store';
+import { projectControl } from '../multiplayer/control';
 import { BillingLedger } from './ledger';
 import { BillingBlocked, MAX_AGENTS, type Reservation } from './policy';
 export class BillingControl extends DurableObject<{ AGENTS: DurableObjectNamespace }> {
+  readonly projects = new ProjectStore(durableObjectDriver(this.ctx.storage));
   readonly ledger = new BillingLedger(durableObjectDriver(this.ctx.storage));
   constructor(ctx: DurableObjectState, env: { AGENTS: DurableObjectNamespace }) {
     super(ctx, env);
@@ -16,6 +19,7 @@ export class BillingControl extends DurableObject<{ AGENTS: DurableObjectNamespa
   async fetch(request: Request): Promise<Response> {
     const action = new URL(request.url).pathname;
     try {
+      if (action.startsWith('/team/') && request.method === 'POST') return projectControl(request, this.projects, this.ledger);
       if (action === '/status' && request.method === 'GET') return Response.json(this.ledger.status());
       if (action === '/sessions' && request.method === 'GET') return Response.json({ sessions: [...this.ctx.storage.sql.exec<{name: string;last_turn: number}>('SELECT name,last_turn FROM billing_agents ORDER BY last_turn DESC LIMIT 50')] });
       if (action === '/inspect' && request.method === 'GET') {

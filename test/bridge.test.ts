@@ -88,3 +88,12 @@ it('official Agents Pi provider accepts a normalized JSON binding response after
   expect(result.stopReason).toBe('stop');
   expect(result.content).toEqual([{ type: 'text', text: 'Preference recorded.' }]);
 });
+
+it('pins a project bridge to one shared remote agent while preserving independent client manifests', async () => {
+ const dir=mkdtempSync(join(tmpdir(),'project-bridge-'));const out:RpcRecord[]=[];
+ const options={url:'https://example.com',token:'fixture',sessionsDir:dir,agentId:'mp-12345678-1234-1234-1234-123456789abc',emit:(e:RpcRecord)=>out.push(e),fetch:(async()=>Response.json({isStreaming:false})) as typeof fetch};
+ try {const a=new DurableRpcBridge(options), b=new DurableRpcBridge(options);expect(a.sessionFile).not.toBe(b.sessionFile);expect(new DurableRpcBridge(options,a.sessionFile).sessionFile).toBe(a.sessionFile);
+  expect(()=>new DurableRpcBridge({...options,agentId:'mp-aaaaaaaa-1234-1234-1234-123456789abc'},a.sessionFile)).toThrow('manifest');
+  await a.handle({type:'new_session'});expect(out.at(-1)).toMatchObject({success:false,error:expect.stringContaining('pinned')});
+ } finally {rmSync(dir,{recursive:true,force:true});}
+});

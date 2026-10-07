@@ -19,3 +19,4 @@ jobs:
       - run: npm run test:workspace
       - run: npm run test:recovery
       - run: npm run test:bridge
+      - run: npm run test:multiplayer

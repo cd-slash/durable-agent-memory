@@ -4,6 +4,8 @@ A TypeScript long-term memory engine for SQLite-backed Cloudflare Durable Object
 
 **Deployed demo:** <https://durable-agent-memory.cloudflare-henry.workers.dev> (data APIs require the demo token).
 
+**Multiplayer:** [Shared projects](docs/MULTIPLAYER.md) support project-scoped editor/viewer access, named Pi agents, durable tasks, handoffs and live observation. [Open the team board](https://durable-agent-memory.cloudflare-henry.workers.dev/multiplayer).
+
 **Billing safety:** Workers Paid is active. Global conservative quotas and a persistent emergency stop protect this demo. Use the red stop button on the home page; read [limits and residual billing risks](docs/BILLING.md) before operating or changing it. Every change requires the project billing-safety skill/review.
 
 **Pi transcript ≠ long-term memory ≠ retrieved working context.**

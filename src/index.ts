@@ -1,4 +1,7 @@
+import { multiplayerUI } from './multiplayer/ui';
 import type { Env } from './agent';
+import { sha256 } from './core/hierarchy';
+import { projectRoutes, teamCall } from './multiplayer/routes';
 import { debugUI } from './ui';
 export { MemoryAgent } from './agent';
 export { BillingControl } from './billing/control';
@@ -6,16 +9,38 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === '/health') return Response.json({ ok: true, runtime: 'PiHarness', storage: 'SQLite Durable Object', localTest: env.LOCAL_TEST === 'true' });
-    if (url.pathname === '/') return new Response(debugUI, { headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'", 'x-content-type-options': 'nosniff' } });
+    if (url.pathname === '/' || url.pathname === '/multiplayer') return new Response(url.pathname === '/' ? debugUI : multiplayerUI, { headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'", 'x-content-type-options': 'nosniff' } });
     if (!env.DEMO_TOKEN) return Response.json({ error: 'Set DEMO_TOKEN with wrangler secret put DEMO_TOKEN before using the demo API' }, { status: 503 });
-    if (request.headers.get('authorization') !== `Bearer ${env.DEMO_TOKEN}`) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    const credential = request.headers.get('authorization')?.match(/^Bearer (.{1,256})$/)?.[1];
+    if (!credential) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    const owner = credential === env.DEMO_TOKEN;
+    let member = 'owner';
+    const hash = owner ? '' : await sha256(credential);
     const control = env.BILLING.get(env.BILLING.idFromName('project-global-v1'));
+    const projectResponse = await projectRoutes(request, env, control, owner, hash);
+    if (projectResponse) return projectResponse;
     if (/^\/admin\/billing\/(status|stop|resume|sessions|inspect)$/.test(url.pathname)) {
+      if (!owner) return Response.json({ error: 'Owner access required' }, { status: 403 });
       const action = url.pathname.split('/').at(-1)!;
       if ((['status','sessions','inspect'].includes(action) && request.method !== 'GET') || (!['status','sessions','inspect'].includes(action) && request.method !== 'POST')) return new Response('Method not allowed', { status: 405 });
       const body = action === 'resume' ? await request.text() : undefined;
       if (body && body.length > 200) return new Response('Payload too large', { status: 413 });
       return control.fetch('https://billing/' + action + (action === 'inspect' ? url.search : ''), { method: request.method, ...(body ? { body } : {}) });
+    }
+    const agentMatch = url.pathname.match(/^\/api\/([a-zA-Z0-9_-]{1,64})\//);
+    if (!owner) {
+      if (!agentMatch) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+      const access = await teamCall(control, 'agent-auth', {agent:agentMatch[1],hash});
+      if (!access.ok) return access;
+      const actor = await access.json() as {role:string;member:string};
+      member = actor.member;
+      if (actor.role === 'viewer' && request.method !== 'GET') {
+        if (!url.pathname.endsWith('/rpc')) return Response.json({error:'Project is read only'},{status:403});
+        const payload = await request.clone().text();
+        if (payload.length > 1000) return new Response('Payload too large',{status:413});
+        let type: unknown; try { type=JSON.parse(payload).type; } catch { return new Response('Invalid JSON',{status:400}); }
+        if (!['get_state','get_available_models','get_commands','get_messages','get_entries','get_session_stats'].includes(String(type))) return Response.json({error:'Project is read only'},{status:403});
+      }
     }
     // Reserve before resolving any agent: arbitrary agent names cannot multiply quotas.
     const permit = await control.fetch('https://billing/reserve', { method: 'POST', body: JSON.stringify({ requests: 1, storageBytes: 4096 }) });
@@ -37,6 +62,9 @@ export default {
       if (!turn.ok) return Response.json({ error: 'Turn quota or billing safety stop reached' }, { status: 503 });
     }
     url.pathname = match[2];
-    return env.AGENTS.get(env.AGENTS.idFromName(match[1])).fetch(new Request(url, request));
+    const forwarded = new Request(url, request);
+    forwarded.headers.set('x-hm-agent', match[1]);
+    forwarded.headers.set('x-hm-member', member);
+    return env.AGENTS.get(env.AGENTS.idFromName(match[1])).fetch(forwarded);
   },
 } satisfies ExportedHandler<Env>;
