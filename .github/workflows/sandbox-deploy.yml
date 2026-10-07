@@ -1,0 +1,41 @@
+name: Activate reviewed Cloudflare coding sandbox
+on:
+  workflow_dispatch:
+    inputs:
+      cost_review:
+        description: Owner approval of docs/SANDBOX.md limits and Docker-runner deployment
+        required: true
+        type: choice
+        default: Do not deploy
+        options:
+          - Do not deploy
+          - Approve reviewed sandbox costs
+permissions:
+  contents: read
+concurrency:
+  group: cloudflare-sandbox-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event.repository.private == false && inputs.cost_review == 'Approve reviewed sandbox costs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: cloudflare-sandbox
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: bash scripts/test-sandbox-image.sh
+      - name: Deploy only with separately approved environment credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: efceafa29432e7f5d5fc86703f78d81b
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo 'Configure the approved Cloudflare environment secret first; no deployment attempted'; exit 1; }
+          npm run deploy:sandbox -- --confirm-reviewed-sandbox-costs
