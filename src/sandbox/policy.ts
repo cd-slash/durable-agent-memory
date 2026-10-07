@@ -1,3 +1,4 @@
+export const SANDBOX_ACTIVATION_BLOCK = 'Cloudflare durable_object scheduling grants exec processes root capabilities; reviewed isolation/lifetime redesign required before activation';
 /** Proposed sandbox ceilings; activation requires separate owner approval. */
 export const SANDBOX = Object.freeze({
   leaseMs: 90_000, containerLifetimeSeconds: 75,

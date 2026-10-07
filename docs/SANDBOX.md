@@ -1,4 +1,6 @@
-# Cloudflare Linux coding sandbox: prepared, not activated
+# Cloudflare Linux coding sandbox: activation blocked
+
+**Activation is blocked even with cost confirmation.** Official native API documentation states that under `durable_object` scheduling, all exec processes have root capabilities regardless of user; file permissions do not enforce isolation. The non-root Docker test does not establish deployed isolation. A documented redesign (for example, default scheduling with actual non-root permissions and platform concurrency limits) is required before activation.
 
 The deployed multiplayer system currently has persistent JavaScript/VFS execution. This opt-in implementation adds a Linux shell with Node/npm, Python3 and Git on **Cloudflare Containers**, controlled through the current native Durable Object Container API. It has not been deployed or verified on the Cloudflare Container transport. Activating a new paid application requires the owner's separate cost approval. Nothing in the normal `npm run deploy` enables it.
 
@@ -9,7 +11,7 @@ flowchart LR
   T3[T3 hosts / scoped project users] --> Agent[Per-agent PiHarness + memory DO]
   Agent -->|shell, immutable tool policy| Gate[Global billing coordinator / durable lease]
   Agent --> Sandbox[Singleton CodingSandbox DO]
-  Sandbox --> Linux[Fresh Linux container, non-root shell]
+  Sandbox --> Linux[Fresh Linux container, activation blocked]
   Linux -->|allowlisted public HTTP only| Proxy[SandboxEgress + lease guard]
   Sandbox --> DB[(Per-agent SQLite checkpoints + replay journal)]
   Stop[Existing red EMERGENCY STOP] --> Gate
@@ -41,7 +43,7 @@ A completed response includes `exitCode`, `stdout`, `stderr`, and **`checkpointe
 | Storage reservation | 6 MiB per attempt, including conservative checkpoint/journal overhead |
 | Command | 20 seconds default, 30 maximum; 16 KiB input |
 | Output | 8 KiB stdout + stderr combined |
-| Fixed container entrypoint | Root-owned `/bin/sleep 75`; unprivileged commands cannot extend it |
+| Fixed container entrypoint | `/bin/sleep 75`, best effort only; root-capable code invalidates the earlier protection claim |
 | Network | Reserve 8 MiB per attempt; at most 16 requests, 32 KiB request / 2 MiB response |
 | Network accounting | Each request charges its body plus a full 2 MiB response before forwarding; at most four zero-body requests fit, three if requests have bodies |
 | Journal | 500 lifetime operation tombstones; explicit owner review when full |
@@ -72,13 +74,15 @@ The existing home-page red **EMERGENCY STOP** latches the central gate first, re
 - POST `/admin/sandbox/run`: owner-only bounded manual execution without inference; same global lease/tool/execution/storage limits and project tool policy. No bypass or retries.
 - POST `/admin/billing/stop`: global admission stop and best-effort container destruction.
 
-Do not expose internal `/run`, `/cancel` or coordinator APIs publicly. Ordinary Pi cancellation targets the same agent/call-id; it cannot cancel another agent's active command. A 90-second durable alarm is scheduled before startup for one cleanup attempt; it never re-enqueues work. The fixed 75-second root entrypoint backs up request/command cancellation. Startup recovery destroys any running/interrupted sandbox; it never resumes a process. Expired leases are **not** automatically released. Destruction must be confirmed before releasing the global slot. Cleanup uncertainty keeps admission locked and requests a persistent billing stop. Out-of-band endpoint shutoff remains available; see [billing operations](BILLING.md).
+Do not expose internal `/run`, `/cancel` or coordinator APIs publicly. Ordinary Pi cancellation targets the same agent/call-id; it cannot cancel another agent's active command. A 90-second durable alarm is scheduled before startup for one cleanup attempt; it never re-enqueues work. The image entrypoint is best effort and is not a trusted lifetime backstop under the current root-capable beta policy. Startup recovery destroys any running/interrupted sandbox; it never resumes a process. Expired leases are **not** automatically released. Destruction must be confirmed before releasing the global slot. Cleanup uncertainty keeps admission locked and requests a persistent billing stop. Out-of-band endpoint shutoff remains available; see [billing operations](BILLING.md).
 
 ## Build and activation procedure
 
 1. Review this document and [.agents/billing-reviews/2026-10-07-cloudflare-sandbox.md](../.agents/billing-reviews/2026-10-07-cloudflare-sandbox.md). The owner must explicitly approve new container infrastructure and these proposed costs. The prepared config has `SANDBOX_ENABLED=false`; the standard execution config has no container binding/application.
 2. Run `npm run check`, `npm run test:sandbox`, and `bash scripts/test-sandbox-image.sh` on a **Docker-capable runner**. This machine currently has no Docker runtime. The public repository's `sandbox-image` CI job builds/tests the image, has a ten-minute timeout, no Cloudflare credentials and no registry push/deployment. It skips private repositories to avoid introducing paid private-runner usage. A `.dockerignore` restricts image build context to the Dockerfile/checkpoint source; credentials never enter the image.
 3. On the approved Docker-capable deployment runner, use existing configured Cloudflare authentication, then `npm run deploy:sandbox -- --confirm-reviewed-sandbox-costs`. This builds/uploads the custom image, deploys `wrangler.sandbox.jsonc` and explicitly overrides `SANDBOX_ENABLED:true`. Alternatively, the prepared **Activate reviewed Cloudflare coding sandbox** workflow provides a Docker-capable runner. It only accepts manual dispatch on main with the approval choice, skips private repositories and times out after ten minutes. After owner approval of this method, configure a narrowly scoped Cloudflare token as the `cloudflare-sandbox` environment secret `CLOUDFLARE_API_TOKEN` using secret management; it is exposed only to the deployment step. No secret has been configured or workflow dispatched by this build. No live smoke is automatic. After activation, continue deploying the reviewed sandbox config so the new migration/application is retained. To disable shell, latch stop and confirm destruction, then deploy this same config with the flag false; do not remove its namespace/migration as a rollback. Do not copy credentials into Git or chat. The deployment preserves existing billing/Pi namespaces and adds one SQLite coding sandbox class through a new migration. Wrangler rejects mixing `exports` and `migrations`; this repository retains its existing migrations to preserve live Pi/billing namespaces.
+**These activation commands currently fail before deployment. Cost approval alone does not lift the source-level block.** Native `exec` also requires numeric `uid:gid` and does not inherit startup environment except PATH; the adapter syntax/environment has been corrected, but remains unverified on Cloudflare.
+
 4. A tool declaration/capability change is a deliberate **cache epoch** change: start a fresh Pi context for the new agent. Memory/checkpoint writes remain storage operations; they never modify active prompt prefixes. Create an agent whose immutable policy includes `shell`. Existing demonstration builder/reviewer policies intentionally exclude execution.
 5. Inspect the global ledger. Run `BRIDGE_TOKEN_FILE=/path/to/private/token npm run test:hosted-sandbox -- --confirm-live-sandbox-smoke` only after activation approval. This finite hosted verification has **no inference** and at most two owner-only `/admin/sandbox/run` calls. First write/run a marker with Node/Python/Git, then in a fresh container verify its source and `.git` survived. Reserve at most 180 seconds, two executions/tools, 12 MiB storage and 16 MiB network. Run across separate UTC days if current storage headroom is insufficient; never reset counters, continue after denial, or resume a stopped service implicitly. Stop/destroy once and inspect state/logs. Native Cloudflare startup/transport, HTTPS interception and restart cleanup remain unverified until this approved check.
 
@@ -87,3 +91,7 @@ A production expansion needs measured actual usage, native beta transport valida
 Local validation on 2026-10-07: 69 unit tests (18 sandbox tests, including four actual Python script checks), typecheck, billing review and standard guarded Worker dry-run passed; workerd workspace, Pi restart recovery, T3 bridge and multiplayer/auth/paused-admin regression suites passed. Sandbox-config lifecycle validation passed after correcting the mixed declarations; its full dry-run awaits a Docker runner. No Cloudflare container or paid model smoke was run for this change.
 
 Image validation passed on the public GitHub Docker runner in [CI run 37615068923](https://github.com/cd-slash/durable-agent-memory/actions/runs/37615068923): production image build, non-root Node/npm/Python/Git/workspace smoke and checkpoint tests. All check CI also passed. This validates the image, not native Cloudflare transport.
+
+## Tailscale connectivity (research only)
+
+Tailscale [userspace networking](https://tailscale.com/kb/1112/userspace-networking) can provide localhost SOCKS5/HTTP proxies without a TUN device or privileged networking setup. This is a plausible Cloudflare Container integration, not a demonstrated connection. Current enableInternet=false and npm/public-Git-only intercept policy blocks it. It needs separately reviewed control/relay connectivity and tailnet ACLs. Proxy-aware HTTP/SSH clients can connect to approved tailnet peers through userspace mode; ordinary 100.x/MagicDNS routing should not be assumed. A narrow authenticated gateway on an existing tailnet server is another option for selected APIs. Tailnet auth must be narrowly tagged/ephemeral and never use an owner/admin credential; secrets inside an arbitrary-code sandbox may be readable by that code. No node or credential is configured.

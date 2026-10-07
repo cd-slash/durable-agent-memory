@@ -5,7 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git python3 ca-
     && mkdir -p /workspace /opt/hm && chown 1000:1000 /workspace
 COPY sandbox/checkpoint.py /opt/hm/checkpoint.py
 RUN chmod 0555 /opt/hm/checkpoint.py
-# Root PID 1 owns the fixed lifetime. Commands use non-root uid 1000 (node).
+# Best-effort image lifetime only: deployed durable_object processes have root capabilities.
+# Numeric uid:gid affects ownership, not isolation under that beta policy.
 # Container controller overrides explicitly with this same entrypoint.
 ENTRYPOINT ["/bin/sleep", "75"]
 # Clear inherited Node CMD so the fixed entrypoint has no appended arguments.

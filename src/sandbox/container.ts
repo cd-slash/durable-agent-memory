@@ -3,7 +3,7 @@ import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import { durableObjectDriver } from '../storage/durable-sqlite';
 import { SandboxJournal } from './journal';
 import { SandboxRunner, type SandboxRuntime } from './runner';
-import { SANDBOX, type ShellInput } from './policy';
+import { SANDBOX, SANDBOX_ACTIVATION_BLOCK, type ShellInput } from './policy';
 import { sandboxNetwork } from './network';
 import type { SandboxLease } from './leases';
 interface SandboxEnv { BILLING:DurableObjectNamespace; SANDBOX_ENABLED?:string }
@@ -26,6 +26,8 @@ export class CodingSandbox extends DurableObject<SandboxEnv> {
     if (!response.ok) throw new Error('Sandbox control denied'); return response.json();
   }
   private container() { if (!this.ctx.container) throw new Error('Container attachment unavailable'); return this.ctx.container; }
+  // Native exec inherits only PATH from startup; pass reviewed non-secret env explicitly.
+  readonly executionEnv = {HOME:'/tmp',PATH:'/usr/local/bin:/usr/bin:/bin',NODE_EXTRA_CA_CERTS:'/etc/cloudflare/certs/cloudflare-containers-ca.crt',GIT_SSL_CAINFO:'/etc/cloudflare/certs/cloudflare-containers-ca.crt',GIT_TERMINAL_PROMPT:'0',NPM_CONFIG_CACHE:'/tmp/npm-cache',NPM_CONFIG_FETCH_RETRIES:'0',NPM_CONFIG_FETCH_TIMEOUT:'5000',NPM_CONFIG_AUDIT:'false',NPM_CONFIG_FUND:'false'};
   readonly runtime:SandboxRuntime = {
     acquire: input=>this.call('acquire',{agent:input.agent,operationId:input.operationId}),
     assertActive: token=>this.call('active',{token}),
@@ -34,7 +36,7 @@ export class CodingSandbox extends DurableObject<SandboxEnv> {
       const container=this.container();
       container.start({image:container.images.coding,instance:'lite',enableInternet:false,
         entrypoint:['/bin/sleep',String(SANDBOX.containerLifetimeSeconds)],
-        env:{HOME:'/tmp',PATH:'/usr/local/bin:/usr/bin:/bin',NODE_EXTRA_CA_CERTS:'/etc/cloudflare/certs/cloudflare-containers-ca.crt',GIT_SSL_CAINFO:'/etc/cloudflare/certs/cloudflare-containers-ca.crt',GIT_TERMINAL_PROMPT:'0',NPM_CONFIG_CACHE:'/tmp/npm-cache',NPM_CONFIG_FETCH_RETRIES:'0',NPM_CONFIG_FETCH_TIMEOUT:'5000',NPM_CONFIG_AUDIT:'false',NPM_CONFIG_FUND:'false'},
+        env:this.executionEnv,
         labels:{application:'durable-agent-memory',lease:lease.token}});
       await container.setInactivityTimeout(1000);
       // enableInternet=false also denies direct TCP/SSH, other ports and IP-address bypasses.
@@ -46,7 +48,7 @@ export class CodingSandbox extends DurableObject<SandboxEnv> {
     exec: async (command,signal,stdin,user)=>{
       signal.throwIfAborted();
       const input=stdin===undefined?undefined:new ReadableStream<Uint8Array>({start(controller){controller.enqueue(new TextEncoder().encode(stdin));controller.close();}});
-      const process=await this.container().exec(command,{cwd:'/workspace',user,signal,stdin:input,stdout:'pipe',stderr:'pipe'});
+      const process=await this.container().exec(command,{cwd:'/workspace',user,env:this.executionEnv,signal,stdin:input,stdout:'pipe',stderr:'pipe'});
       return process as unknown as import('./process').ShellProcess;
     },
     destroy: async()=>{await this.container().destroy();},
@@ -80,13 +82,14 @@ export class CodingSandbox extends DurableObject<SandboxEnv> {
   async alarm() { await this.cleanup().catch(()=>{}); } // single cleanup attempt, no alarm loop
   async fetch(request:Request):Promise<Response> {
     const path=new URL(request.url).pathname;
-    if (path==='/status' && request.method==='GET') return Response.json({enabled:this.env.SANDBOX_ENABLED==='true',running:this.ctx.container?.running??false,...this.journal.status()});
+    if (path==='/status' && request.method==='GET') return Response.json({enabled:this.env.SANDBOX_ENABLED==='true' && !SANDBOX_ACTIVATION_BLOCK,activationBlock:SANDBOX_ACTIVATION_BLOCK,running:this.ctx.container?.running??false,...this.journal.status()});
     if (path==='/stop' && request.method==='POST') {try {await this.cleanup();return Response.json({destroyed:true});}catch{return Response.json({error:'Cleanup unconfirmed'},{status:503});}}
     if (path==='/cancel' && request.method==='POST') {
       const {agent,operationId}=await request.json() as {agent:string;operationId:string};
       this.runner.cancel(agent,operationId);return Response.json({cancellationRequested:true});
     }
     if (path!=='/run' || request.method!=='POST') return new Response('Not found',{status:404});
+    if (SANDBOX_ACTIVATION_BLOCK) return Response.json({error:SANDBOX_ACTIVATION_BLOCK},{status:503});
     if (this.cleaning) return Response.json({error:'Sandbox cleanup in progress'},{status:503});
     if (this.env.SANDBOX_ENABLED!=='true') return Response.json({error:'Sandbox activation requires separate owner cost approval'},{status:503});
     try {

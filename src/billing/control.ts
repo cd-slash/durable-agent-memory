@@ -3,7 +3,7 @@ import { durableObjectDriver } from '../storage/durable-sqlite';
 import { ProjectStore } from '../multiplayer/store';
 import { projectControl } from '../multiplayer/control';
 import { SandboxLeases } from '../sandbox/leases';
-import { SANDBOX } from '../sandbox/policy';
+import { SANDBOX, SANDBOX_ACTIVATION_BLOCK } from '../sandbox/policy';
 import { BillingLedger } from './ledger';
 import { BillingBlocked, MAX_AGENTS, type Reservation } from './policy';
 interface ControlEnv { AGENTS: DurableObjectNamespace; SANDBOX?: DurableObjectNamespace; SANDBOX_ENABLED?: string }
@@ -24,7 +24,7 @@ export class BillingControl extends DurableObject<ControlEnv> {
     const action = new URL(request.url).pathname;
     try {
       if (action.startsWith('/team/') && request.method === 'POST') return projectControl(request, this.projects, this.ledger);
-      if (action === '/status' && request.method === 'GET') return Response.json({ ...this.ledger.status(), sandbox: { enabled: this.env.SANDBOX_ENABLED === 'true', lease: this.sandbox.status() ?? null, limits: SANDBOX } });
+      if (action === '/status' && request.method === 'GET') return Response.json({ ...this.ledger.status(), sandbox: { enabled: this.env.SANDBOX_ENABLED === 'true' && !SANDBOX_ACTIVATION_BLOCK, activationBlock: SANDBOX_ACTIVATION_BLOCK, lease: this.sandbox.status() ?? null, limits: SANDBOX } });
       if (action.startsWith('/sandbox/')) {
         if (action === '/sandbox/status' && request.method === 'GET') return Response.json({ lease: this.sandbox.status() ?? null });
         if (request.method !== 'POST') return new Response('Not found', { status: 404 });
@@ -33,6 +33,7 @@ export class BillingControl extends DurableObject<ControlEnv> {
         if (action === '/sandbox/release' && typeof body.token === 'string') {this.sandbox.release(body.token);return Response.json({released:true});}
         if (this.env.SANDBOX_ENABLED !== 'true' || !this.env.SANDBOX) throw new BillingBlocked('Sandbox disabled pending owner cost approval');
         if (action === '/sandbox/acquire') {
+          if (SANDBOX_ACTIVATION_BLOCK) throw new BillingBlocked(SANDBOX_ACTIVATION_BLOCK);
           if (!body.agent || !/^[a-zA-Z0-9_-]{1,64}$/.test(body.agent) || !body.operationId || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.operationId) || ![...this.ctx.storage.sql.exec('SELECT name FROM billing_known_agents WHERE name=?',body.agent)].length) throw new BillingBlocked('Unknown sandbox agent');
           const projectAgent = this.projects.agent(body.agent);
           if (projectAgent && !projectAgent.allowedTools.includes('shell')) throw new BillingBlocked('Shell denied by project policy');

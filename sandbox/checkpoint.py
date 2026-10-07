@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded, no-follow workspace checkpoint. Runs from immutable /opt/hm, never user files."""
+"""Bounded, no-follow workspace checkpoint. Pack is untrusted under root-capable runtimes; restore must use a fresh image."""
 import base64, json, os, stat, sys
 ROOT = '/workspace'
 OWNER, GROUP = 1000, 1000

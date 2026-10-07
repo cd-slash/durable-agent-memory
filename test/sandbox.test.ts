@@ -162,3 +162,10 @@ it('Pi shell tool binds trusted agent identity and stable task identity, ignorin
   expect(bodies.map(body=>body.agent)).toEqual(['builder','builder','builder']);expect(bodies[0].operationId).toMatch(/^[a-f0-9]{64}$/);
   expect(bodies[0].operationId).toBe(bodies[1].operationId);expect(bodies[2].operationId).not.toBe(bodies[0].operationId);
 });
+it('blocks paid native activation before effects even with the previous cost confirmation',async()=>{
+  const {execFileSync}=await import('node:child_process');
+  for(const args of [[],['--confirm-reviewed-sandbox-costs']]){
+    try{execFileSync('node_modules/.bin/tsx',['scripts/deploy-sandbox.ts',...args],{stdio:'pipe'});throw new Error('Activation unexpectedly succeeded');}
+    catch(error:any){expect(error.status).toBe(1);expect(String(error.stderr)).toContain('Sandbox activation blocked');}
+  }
+});

@@ -39,7 +39,7 @@ export class SandboxRunner {
         await this.runtime.assertActive(lease!.token);
         controller.signal.throwIfAborted();
         await this.runtime.start(lease!);
-        const execute = async (cmd:string[],cap:number,stdin?:string,user='root',signal=controller.signal) => {
+        const execute = async (cmd:string[],cap:number,stdin?:string,user='0:0',signal=controller.signal) => {
           signal.throwIfAborted();
           const launching = this.runtime.exec(cmd,signal,stdin,user).then(process=>{if(signal.aborted){try{process.kill(9);}catch{}}return process;});
           const process = await interruptible(launching,signal);
@@ -48,7 +48,7 @@ export class SandboxRunner {
         const restore = await execute(['python3','/opt/hm/checkpoint.py','restore'],SANDBOX.outputBytes,this.journal.checkpoint(input.agent));
         if (restore.exitCode !== 0) throw new Error('Checkpoint restore failed');
         const commandSignal = AbortSignal.any([controller.signal,AbortSignal.timeout(input.timeoutMs ?? SANDBOX.commandMs)]);
-        const command = await execute(['/bin/sh','-c',input.command],SANDBOX.outputBytes,undefined,'1000',commandSignal);
+        const command = await execute(['/bin/sh','-c',input.command],SANDBOX.outputBytes,undefined,'1000:1000',commandSignal);
         // No checkpoint if command timed out/overflowed. Nonzero completed commands may have useful file effects.
         const checkpoint = await execute(['python3','/opt/hm/checkpoint.py','pack'],SANDBOX.checkpointWireBytes);
         controller.signal.throwIfAborted();
