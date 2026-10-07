@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { SANDBOX } from '../src/sandbox/policy';
 import { BILLING_LIMITS, MAX_AGENTS, MAX_STORAGE_RESERVATION } from '../src/billing/policy';
@@ -26,7 +26,7 @@ if (changed.length) {
     assert.ok(!/\b(TODO|TBD)\b/.test(text), 'Billing reviews must describe actual evidence');
   }
 }
-for (const file of ['wrangler.jsonc', 'wrangler.execution.jsonc', 'wrangler.sandbox.jsonc', 'wrangler.tailnet.jsonc']) {
+for (const file of ['wrangler.jsonc', 'wrangler.execution.jsonc', 'wrangler.sandbox.jsonc', 'wrangler.tailnet.jsonc', ...(existsSync('wrangler.tailnet.local.jsonc') ? ['wrangler.tailnet.local.jsonc'] : [])]) {
   const config = JSON.parse(readFileSync(file, 'utf8'));
   assert.ok(config.durable_objects.bindings.some((b: any) => b.name === 'BILLING' && b.class_name === 'BillingControl'), 'Global billing binding required');
   assert.ok(config.migrations.some((m: any) => m.new_sqlite_classes?.includes('BillingControl')), 'Billing migration required');
@@ -59,3 +59,15 @@ assert.equal(tailnetConfig.containers[0].max_instances,1);
 assert.equal(tailnetConfig.containers[0].scheduling_policy,"default");
 assert.equal(tailnetConfig.containers[0].instance_type,"lite");
 assert.ok(!JSON.stringify(tailnetConfig).includes("tskey-"));
+
+if(existsSync('wrangler.tailnet.local.jsonc')) {
+  const active=JSON.parse(readFileSync('wrangler.tailnet.local.jsonc','utf8'));
+  assert.equal(active.containers.length,1);
+  assert.equal(active.containers[0].max_instances,1);
+  assert.equal(active.containers[0].scheduling_policy,'default');
+  assert.equal(active.containers[0].instance_type,'lite');
+  assert.ok(active.durable_objects.bindings.some((b:any)=>b.name==='TAILNET'&&b.class_name==='TailnetGateway'));
+  assert.ok(active.migrations.some((m:any)=>m.new_sqlite_classes?.includes('TailnetGateway')));
+  assert.equal(active.vars.TAILSCALE_AUTH_KEY,undefined,'Enrollment key must be a Cloudflare secret, never vars');
+  assert.ok(!JSON.stringify(active).includes('tskey-'),'Credentials must not be written into deployment configuration');
+}

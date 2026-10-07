@@ -19,25 +19,25 @@ export class TailnetRunner {
   constructor(private journal:SandboxJournal,private runtime:TailnetRuntime){}
   async run(input:TailnetOperation):Promise<GatewayResult>{
     if(this.busy)throw new Error('Tailnet gateway busy');this.busy=true;const controller=new AbortController();this.controller=controller;
-    let lease:{token:string;deadline:number}|undefined,id:string|undefined,admitting=false;
+    let lease:{token:string;deadline:number}|undefined,id:string|undefined,admitting=false,phase='journal';
     let result:GatewayResult={ok:false,error:'Tailnet operation denied or interrupted'};
     try{
       id=await sha256('tailnet\0'+input.agent+'\0'+input.operationId);
       const prior=this.journal.start(id,input.agent,await sha256(JSON.stringify(input)));
       if(prior)return JSON.parse(prior.stdout) as GatewayResult;
-      admitting=true;lease=await within(this.runtime.acquire(input));this.journal.lease(id,lease.token);
+      phase='admission';admitting=true;lease=await within(this.runtime.acquire(input));this.journal.lease(id,lease.token);
       const work=async()=>{
-        await interruptible(this.runtime.alarm(lease!.deadline),controller.signal);await interruptible(this.runtime.active(lease!.token),controller.signal);
+        phase='lease';await interruptible(this.runtime.alarm(lease!.deadline),controller.signal);await interruptible(this.runtime.active(lease!.token),controller.signal);
         if(controller.signal.aborted)throw new Error("Gateway interrupted");
-        await interruptible(this.runtime.start(lease!.token),controller.signal);
+        phase='startup';await interruptible(this.runtime.start(lease!.token),controller.signal);
         await interruptible(this.runtime.active(lease!.token),controller.signal);
         if(controller.signal.aborted)throw new Error("Gateway interrupted");
-        const response=await within(this.runtime.request(input),20000);
+        phase='request';const response=await within(this.runtime.request(input),20000);
         if(new TextEncoder().encode(JSON.stringify(response)).length>SANDBOX.outputBytes*2)throw new Error('Gateway result too large');
         return response;
       };
       result=await within(interruptible(work(),controller.signal),Math.max(1,lease.deadline-Date.now()));
-    }catch{/* Never echo provider output/credentials. */}
+    }catch{result={ok:false,error:'Tailnet operation denied or interrupted during '+phase};/* Never echo provider output/credentials. */}
     finally{
       controller.abort();
       if(lease)try{await within(this.runtime.destroy());await within(this.runtime.clearAlarm());await within(this.runtime.release(lease.token));}catch{await within(this.runtime.failure()).catch(()=>{});result={ok:false,error:'Gateway cleanup unconfirmed; billing stop requested'};}

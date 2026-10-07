@@ -50,3 +50,7 @@ it('Pi tailnet tool ignores forged agent/operation identity and supports fixed S
  await tool.execute({target:'test',port:22,user:'root',agent:'forged',operationId:'fake'},api as any,{abortSignal:new AbortController().signal} as any);
  expect(bodies[0]).toMatchObject({agent:'builder',kind:'ssh',user:'root'});expect(bodies[0].operationId).toMatch(/^[a-f0-9]{64}$/);
 });
+
+it('startup failures report a safe phase without echoing platform messages or credentials',async()=>{
+ const f=fixture();f.runtime.start=async()=>{throw new Error('private-provider-message');};const result=await f.runner.run(input);expect(result.error).toContain('startup');expect(JSON.stringify(result)).not.toContain('private-provider-message');expect(f.leases.status()).toBeUndefined();f.db.close();
+});

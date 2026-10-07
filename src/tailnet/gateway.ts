@@ -22,11 +22,14 @@ export class TailnetGateway extends DurableObject<GatewayEnv>{
       const key=this.env.TAILSCALE_AUTH_KEY;if(!key?.startsWith('tskey-auth-'))throw new Error('Enrollment secret missing');
       this.gatewayToken=crypto.randomUUID();
       this.container().start({enableInternet:true,env:{TAILSCALE_AUTH_KEY:key,HM_GATEWAY_TOKEN:this.gatewayToken,HM_TAILNET_TARGETS:JSON.stringify(targetsFromJson(this.env.TAILNET_TARGETS))}});
-      await this.container().setInactivityTimeout(1000);
-      // Fixed finite readiness checks, never background polling or automatic execution retry.
-      for(let attempt=0;attempt<10;attempt++){
-        try{const response=await within(this.container().getTcpPort(8080).fetch('http://gateway/health'),1000);if(response.ok)return;}catch{}
-        await new Promise(resolve=>setTimeout(resolve,500));
+      await this.container().setInactivityTimeout(75000);
+      // Observe native startup failure without logging platform errors or startup env.
+      const exited=this.container().monitor().then(()=>{throw new Error('Gateway exited');},()=>{throw new Error('Gateway native startup failed');});
+      void exited.catch(()=>{});
+      // One boot: fixed finite readiness checks, never a second start or background retry.
+      for(let attempt=0;attempt<40;attempt++){
+        try{const response=await within(Promise.race([this.container().getTcpPort(8080).fetch('http://gateway/health'),exited]),1000);if(response.ok&&(await within(response.json(),1000) as {ready?:boolean}).ready)return;}catch{}
+        await Promise.race([new Promise(resolve=>setTimeout(resolve,500)),exited]);
       }
       throw new Error('Gateway startup unavailable');
     },

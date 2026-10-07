@@ -14,7 +14,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "dev": "wrangler dev",
-    "deploy": "npm run billing:check && wrangler deploy --config wrangler.execution.jsonc",
+    "deploy": "npm run billing:check && wrangler deploy --config wrangler.tailnet.local.jsonc",
     "smoke": "tsx scripts/smoke.ts",
     "test:recovery": "tsx scripts/local-recovery.ts",
     "check": "npm run billing:check && npm run typecheck && npm test && wrangler deploy --dry-run --config wrangler.execution.jsonc",
@@ -34,7 +34,8 @@
     "test:hosted-multiplayer": "tsx scripts/hosted-multiplayer-smoke.ts",
     "deploy:sandbox": "npm run billing:check && tsx scripts/deploy-sandbox.ts",
     "test:sandbox": "vitest run test/sandbox.test.ts",
-    "test:hosted-sandbox": "tsx scripts/hosted-sandbox-smoke.ts"
+    "test:hosted-sandbox": "tsx scripts/hosted-sandbox-smoke.ts",
+    "test:hosted-tailnet": "tsx scripts/hosted-tailnet-smoke.ts"
   },
   "dependencies": {
     "@cloudflare/computer": "0.4.1",

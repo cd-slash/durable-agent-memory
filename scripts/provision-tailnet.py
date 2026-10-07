@@ -41,7 +41,7 @@ def provision(values,tailnet,tag,call=api):
         try:call('DELETE',url+'/'+quote(key_id,safe=''),ts)
         except Exception:raise RuntimeError('Secret upload failed and key revocation unconfirmed; revoke gateway key in Tailscale admin console') from None
         raise RuntimeError('Secret upload failed; newly minted key revoked') from None
-    return {'keyId':key_id,'tailnet':tailnet,'tag':tag,'expirySeconds':86400,'secretName':'TAILSCALE_AUTH_KEY','worker':WORKER}
+    return {'keyId':key_id,'tailnet':tailnet,'tag':tag,'expirySeconds':86400,'secretName':'TAILSCALE_AUTH_KEY','worker':WORKER,'createdAt':created.get('created'),'expiresAt':created.get('expires')}
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--env-file',default='/home/coder/.env');parser.add_argument('--tailnet',required=True);parser.add_argument('--tag',default='tag:hm-tailnet-gateway');args=parser.parse_args()

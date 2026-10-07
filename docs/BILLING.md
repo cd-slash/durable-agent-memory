@@ -64,7 +64,7 @@ Do not redeploy/reopen endpoints or resume after an incident without explicit ow
 1. Read the project skill and operating memory. Trace affected requests, AI, DO storage/duration, tools, alarms, retries, logging and test automation.
 2. Write a new review with the fields enforced by `scripts/billing-review.ts`, including worst-case counts, stop availability, validation and residual risk. Run `npm run billing:check` and relevant local tests.
 3. Review limits and unknown-provider deny behavior. Do not raise budgets, reset usage, add paid infrastructure, bypass guards or roll back to an unguarded version without explicit owner approval.
-4. Deploy the guarded execution config (`npm run deploy`). Both configurations preserve the global billing binding/migration. Inspect status before/after a finite hosted check; stop at the first denial. Hosted checks are never run automatically in CI or on a schedule.
+4. Deploy the guarded private tailnet config (`npm run deploy`, requiring ignored `wrangler.tailnet.local.jsonc`). Gateway activation currently remains disabled after a failed hosted check; preserve that state and the new binding/migration. All configurations preserve the global billing binding/migration. Inspect status before/after a finite hosted check; stop at the first denial. Hosted checks are never run automatically in CI or on a schedule.
 
 The initial hosted execution smoke is bounded to three turns; it must fit within the remaining ledger. A stop/resume exercise uses the explicit existing task authorization for validation, restores only the prior operating state, and does not reset quotas. Normal operation has no dashboard polling loop; inspect usage manually.
 
@@ -94,3 +94,7 @@ Signed project credentials are checked offline before SQLite authorization to av
 ## Prepared Linux sandbox (not activated)
 
 [Sandbox costs and activation](SANDBOX.md) specify separate proposed limits, one durable global slot, fixed container lifetime, bounded SQLite checkpoints and emergency destruction. These are not deployed container resources. Existing quotas are retained, and every shell attempt also consumes the existing execution/tool/storage budgets. Standard deployment does not activate containers. New paid infrastructure requires explicit separate owner approval.
+
+## Tailnet gateway verification
+
+The first hosted SSH attempt failed; native cleanup and singleton slot release were confirmed. It consumed one tool/execution,90seconds and8MiB network reservations, and6297712 reserved storage bytes; zero inference. Current daily storage reservation11691888/16777216bytes cannot accommodate another6MiB attempt, so no further hosted execution is authorized by current bounds today. Counts remain unchanged by disable/deploy. Gateway is explicitly disabled pending deliberate successful verification; ordinary chat remains enabled. One pinned lite/default-policy application with max_instances1 exists with an inactive instance. Retained image/object resources can still bill. Read-only verification confirmed configured secret, disabled admission503, unauthenticated status401 and empty global lease. See [TAILNET.md](TAILNET.md); native arbitrary-code sandbox remains blocked.

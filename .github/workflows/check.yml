@@ -34,3 +34,4 @@ jobs:
       - run: bash scripts/test-sandbox-image.sh
       - run: docker build -f sandbox/Tailnet.Dockerfile -t hm-tailnet:test .
       - run: docker run --rm --entrypoint /usr/local/bin/tailscale hm-tailnet:test version
+      - run: bash scripts/test-tailnet-image.sh
