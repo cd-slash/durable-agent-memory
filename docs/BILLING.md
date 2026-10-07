@@ -71,3 +71,8 @@ The initial hosted execution smoke is bounded to three turns; it must fit within
 ## Limits of the protection
 
 This is an application circuit breaker, **not a guaranteed account-wide dollar cap**. Cloudflare still meters incoming HTTP requests even when this app returns 401/503, and serves the static UI/health endpoint outside the coordinator. Coordinator checks, best-effort cancellations, storage retention, in-flight work, scheduled wakeups and other account services can still incur costs. Attack traffic must be handled with Cloudflare edge controls/endpoint disable. Use provider billing alerts, monitor actual account usage, and separately review all other services. Absolute avoidance of every possible overage cannot be enforced solely by this Worker.
+
+
+## Latest deployment verification
+
+The guarded execution deployment succeeded on 2026-10-07. All 37 unit tests and local workspace/stop/object-quota, restart and bridge suites passed. Hosted authentication/stop/denial/resume tests passed with zero new AI reservations. A subsequent bounded hosted execution smoke failed to find its expected file on the next turn; the model had made several attempts. The global stop was then latched rather than retrying. At stop the ledger showed 1649 reserved neurons, 12 AI attempts, 6 executions and 2 turns. These are estimated reservations, not an invoice. The agent is intentionally stopped pending diagnosis; stop/status controls remain available. Do not infer successful hosted file persistence from local tests alone.

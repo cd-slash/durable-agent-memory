@@ -97,7 +97,7 @@ database.close();
 
 The default independent engine has extractive summaries and lexical retrieval. Supply an `EmbeddingProvider` for semantic retrieval and a `MemorySummarizer` for model-generated summaries. The deployed adapter supplies both using Workers AI. `TokenCounter` and scoring are also injectable. TypeScript source exports are intended for a TS-aware bundler or `tsx`; this repository is not yet published to npm.
 
-`remember()` validates and commits an event without waiting for model work. An optional idempotency key makes tool replay and imports safe; reusing a key with different input fails. `compact()` finishes missing work, without regenerating historical nodes. Background jobs use bounded batches of eight. Summary errors retain sources and missing work for retry.
+`remember()` validates and commits an event without waiting for model work. An optional idempotency key makes tool replay and imports safe; reusing a key with different input fails. `compact()` finishes missing work, without regenerating historical nodes. Hosted background jobs use one bounded batch of four per enqueue; explicit hosted compaction is capped at eight. Errors retain sources and pause, with no automatic retry. See the billing policy before deliberately resuming work.
 
 Namespaces are optional (stored as `""`) and filters match exact namespace names. Kinds are `observation`, `preference`, `decision`, `fact`, `episode`, `outcome`, `error`, and `instruction`. A stored `instruction` is historical data, not elevated system authority.
 

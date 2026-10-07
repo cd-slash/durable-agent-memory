@@ -5,6 +5,7 @@ const tokenFile = process.env.BRIDGE_TOKEN_FILE;
 if (!base || !tokenFile || !base.startsWith('https://')) throw new Error('Set BRIDGE_REMOTE_URL and BRIDGE_TOKEN_FILE (never pass a token on the command line)');
 const token = (await readFile(tokenFile, 'utf8')).trim();
 const agent = `hosted-workspace-${Date.now()}`;
+console.log('Hosted test agent:', agent);
 async function api(action: string, body?: unknown): Promise<any> {
   const res = await fetch(`${base}/api/${agent}/${action}`, { method: body ? 'POST' : 'GET', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(120000) });
   assert.ok(res.ok, `${action}: HTTP ${res.status}`); return res.json();
