@@ -21,6 +21,7 @@ import { DEFAULT_WEB_HOSTS, webExtension } from './web/tools';
 import { BillingClient } from './billing/control';
 import { guardedAI } from './billing/ai-binding';
 import { BillingBlocked } from './billing/policy';
+import { turnBudgetExtension, reservePreparedTurnRequest } from './pi/turn-budget';
 export interface Env {
   AGENTS: DurableObjectNamespace<MemoryAgent>; AI: Ai; MODEL: string;
   LOADER?: WorkerLoader;
@@ -47,7 +48,7 @@ export class MemoryAgent extends DurableObject<Env> {
   });
   readonly jobs = new MemoryJobs(this.memory, this.billing);
   readonly local = this.env.LOCAL_TEST === 'true' ? localProvider() : undefined;
-  readonly ai = createAI({ binding: piAIBinding(this.billedAI) });
+  readonly ai = createAI({ binding: piAIBinding(guardedAI(this.env.AI, this.billing, () => reservePreparedTurnRequest(this.sql))) });
   readonly registry = createRegistry();
   readonly workspace = createWorkspace(this.ctx.storage, this.env.LOADER);
   readonly webHosts = this.env.WEB_ALLOWED_HOSTS?.split(',').map(host => host.trim()).filter(Boolean) ?? DEFAULT_WEB_HOSTS;
@@ -57,7 +58,11 @@ export class MemoryAgent extends DurableObject<Env> {
       await this.workspace.fs.mkdir('/workspace', { recursive: true });
       this.registry.install(workspaceExtension(this.workspace, !!this.env.LOADER, this.billing));
       this.registry.install(webExtension(this.webHosts, this.billing));
-      const models = createModels(); models.setProvider(this.local?.provider ?? this.ai.provider);
+      this.registry.install(turnBudgetExtension(this.sql));
+      const models = createModels(); models.setProvider(this.local ? new Proxy(this.local.provider, { get: (target, key) => {
+        if (key === 'streamSimple') return (...args: unknown[]) => { reservePreparedTurnRequest(this.sql); return Reflect.apply(target.streamSimple, target, args); };
+        return Reflect.get(target, key);
+      } }) : this.ai.provider);
       return Harness.open(storage, { models, registry: this.registry, settings: { retry: { enabled: false, maxRetries: 0 }, compaction: { enabled: false } }, onReport: () => console.warn('pi_report') }, context);
     },
     defaults: { model: this.local?.getModel() ?? this.ai(this.env.MODEL, { streamIdleTimeoutMs: 15000 }), thinkingLevel: 'off' },

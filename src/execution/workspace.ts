@@ -2,9 +2,10 @@ import { Workspace, type DurableObjectStorageLike } from '@cloudflare/computer';
 import { WorkerJavaScriptBackend } from '@cloudflare/computer/backends/worker-javascript';
 import { createPiTools } from '@cloudflare/computer/tools/pi-ai';
 import type { BillingClient } from '../billing/control';
+import { executionResult } from './results';
 import type { Extension } from '@earendil-works/pi-durable';
 
-export const EXEC_DESCRIPTION = 'Run JavaScript ES module source in a fresh isolated Cloudflare Worker. command is JavaScript, NOT a shell command. Default-export a function to receive input and return a JSON result. console.log/error are captured. Import node:fs/promises for async reads/writes within /workspace, or relative .js modules from the workspace. No shell, npm, Python, host filesystem, host environment, or network access. Prefer read/write/edit for file changes.';
+export const EXEC_DESCRIPTION = 'Run JavaScript ES module source in a fresh isolated Cloudflare Worker. command is JavaScript, NOT a shell command. Default-export a function to receive input and return a JSON result. console.log/error are captured. Import node:fs/promises for async reads/writes within /workspace, or relative .js modules from the workspace. No shell, npm, Python, host filesystem, host environment, or network access. Use named imports (import {writeFile,readFile} from node:fs/promises), not import {promises}. Do not export an object with run() or use a top-level return. Valid example: import {writeFile} from \'node:fs/promises\'; export default async function(input) { await writeFile(\'/workspace/example.json\', JSON.stringify(input)); return {saved:true}; } Prefer read/write/edit for file changes.';
 export function createWorkspace(storage: DurableObjectStorage, loader?: WorkerLoader): Workspace {
   return new Workspace({
     storage: storage as unknown as DurableObjectStorageLike,
@@ -35,13 +36,14 @@ export function workspaceExtension(workspace: Workspace, executionEnabled = true
       name: tool.name, description: tool.name === 'exec' ? EXEC_DESCRIPTION : tool.description,
       parameters: tool.name === 'exec' ? {
         ...tool.parameters,
-        properties: { ...tool.parameters.properties, command: { type: 'string', description: 'JavaScript ES module source. Default-export a function to receive input and return a result.' } },
+        properties: { ...tool.parameters.properties, command: { type: 'string', description: EXEC_DESCRIPTION } },
       } : tool.parameters,
       ...(tool.constrainedSampling ? { constrainedSampling: tool.constrainedSampling } : {}),
       replay: ['read', 'ls', 'find', 'grep'].includes(tool.name) ? 'safe' : 'unsafe',
       async execute(args, api, context) {
         await billing?.reserve({ tools: 1, ...(tool.name === 'exec' ? { executions: 1, storageBytes: 4 * 131072 } : ['write', 'edit'].includes(tool.name) ? { storageBytes: 4 * 65536 } : { storageBytes: 32768 }) });
-        return execute({ id: api.callId, name: tool.name, arguments: args }, { abortSignal: context.abortSignal });
+        const result = await execute({ id: api.callId, name: tool.name, arguments: args }, { abortSignal: context.abortSignal });
+        return tool.name === 'exec' ? executionResult(result) : result;
       },
     })),
   };

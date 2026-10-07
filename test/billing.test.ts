@@ -65,3 +65,9 @@ it('lifetime storage reservations never replenish at month rollover', () => {
   ledger.resume(); expect(() => ledger.reserve({ storageBytes: 1 })).toThrow('lifetime');
   expect(ledger.status().reservations.find((r: any) => r.period === 'lifetime')).toMatchObject({ used: 128 * 1048576 }); db.close();
 });
+it('per-turn provider denial runs before global reservation and inference', async () => {
+  let reservations = 0, calls = 0;
+  const ai = guardedAI({run: async () => { calls++; return {}; }} as unknown as Ai, {reserve: async () => { reservations++; }}, () => { throw new BillingBlocked('Per-turn limit'); });
+  await expect((ai.run as any)('@cf/zai-org/glm-4.7-flash', {})).rejects.toThrow('Per-turn limit');
+  expect(reservations).toBe(0); expect(calls).toBe(0);
+});

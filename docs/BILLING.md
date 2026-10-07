@@ -23,7 +23,7 @@ AI inputs are limited to 32 KiB serialized JSON, with another 4,096 tokens reser
 
 Sources checked 2026-10-07: [Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/), [GLM model](https://developers.cloudflare.com/workers-ai/models/glm-4.7-flash/), [BGE model](https://developers.cloudflare.com/workers-ai/models/bge-base-en-v1.5/). Workers AI currently has a shared free 10,000-neuron daily allocation; Workers Paid allows paid overages. This project stays below half that daily allocation **by its estimate**, leaving headroom, but other account workloads and pricing changes can consume it. Workers Paid does not make Workers AI or all other Cloudflare services free. Check the dashboard's actual usage separately.
 
-Worker CPU is capped at 50ms per request; Dynamic Worker execution defaults to 3 seconds with one concurrent execution per agent, bounded capability calls, 128 KiB total capability traffic, 8 KiB result and 4 KiB stdio. Direct file mutations cap input at 64 KiB; model-visible page text is 4,000 characters. Logs are sampled at 10%; preview URLs are disabled. SSE observers stop after 120 seconds. Pi automatic retry and auto-compaction are disabled. Memory jobs execute one batch of at most four work units per enqueue with no periodic retry, recovery loop or startup auto-drain; explicit compaction uses at most eight units. Missing work remains durable for later deliberate processing. Existing alarms may wake once and return after stop.
+Worker CPU is capped at 50ms per request; Dynamic Worker execution defaults to 3 seconds with one concurrent execution per agent, bounded capability calls, 128 KiB total capability traffic, 8 KiB result and 4 KiB stdio. Direct file mutations cap input at 64 KiB; model-visible page text is 4,000 characters. Logs are sampled at 10%; preview URLs are disabled. SSE observers stop after 120 seconds. Pi automatic retry and auto-compaction are disabled. Each admitted turn permits at most four model requests across tool rounds and recovery. The durable counter is enforced at the actual provider boundary before global reservation/inference; Pi beta request-hook exceptions alone do not reliably block requests. Memory jobs execute one batch of at most four work units per enqueue with no periodic retry, recovery loop or startup auto-drain; explicit compaction uses at most eight units. Missing work remains durable for later deliberate processing. Existing alarms may wake once and return after stop.
 
 ## Emergency stop
 
@@ -72,6 +72,10 @@ The initial hosted execution smoke is bounded to three turns; it must fit within
 
 This is an application circuit breaker, **not a guaranteed account-wide dollar cap**. Cloudflare still meters incoming HTTP requests even when this app returns 401/503, and serves the static UI/health endpoint outside the coordinator. Coordinator checks, best-effort cancellations, storage retention, in-flight work, scheduled wakeups and other account services can still incur costs. Attack traffic must be handled with Cloudflare edge controls/endpoint disable. Use provider billing alerts, monitor actual account usage, and separately review all other services. Absolute avoidance of every possible overage cannot be enforced solely by this Worker.
 
+
+## Read-only diagnosis while stopped
+
+Authenticated GET `/admin/billing/sessions` lists at most 50 registered names. GET `/admin/billing/inspect?agent=<known-name>` returns bounded recent tool evidence for an already admitted agent without starting inference. Keep private traces out of git. JavaScript execution expects a default-exported function and named imports from `node:fs/promises`; nonzero exits are tool errors, and file effects must be verified from successful evidence.
 
 ## Latest deployment verification
 

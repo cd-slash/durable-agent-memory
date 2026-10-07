@@ -26,10 +26,15 @@ const capabilities = await api('debug');
 const executionEnabled = capabilities.capabilities.execution === 'isolated-javascript';
 const first = await turn(executionEnabled ? 'Use exec to compute the sum of the squares of integers 1 through 100 in JavaScript. Write JSON {total: the result, marker: "workspace-proof"} to /workspace/result.json using node:fs/promises. Return the actual result, then briefly explain it. Do not just provide code; execute it.' : 'Use write to create /workspace/result.json containing exactly {"total":338350,"marker":"workspace-proof"}. Tell me when the write succeeded.');
 assert.ok(first.tools.some((t: any) => t.toolName === (executionEnabled ? 'exec' : 'write')), 'Model must call the real workspace tool');
-if (executionEnabled) assert.match(JSON.stringify(first.tools), /338350/);
+if (executionEnabled) {
+  const successful = first.tools.filter((t: any) => t.toolName === 'exec' && !t.isError).flatMap((t: any) => t.content.filter((b: any) => b.type === 'text').map((b: any) => { try { return JSON.parse(b.text); } catch { return null; } }));
+  assert.ok(successful.some((r: any) => r?.exitCode === 0 && JSON.stringify(r.result).includes('338350')), 'Successful exec must return the computed value');
+}
 const second = await turn('Read /workspace/result.json using a workspace tool and tell me its total and marker. Do not rewrite it.');
-assert.ok(second.tools.some((t: any) => ['read', 'exec'].includes(t.toolName)));
-assert.match(JSON.stringify(second.tools), /workspace-proof/);
+const reads = second.tools.filter((t: any) => ['read', 'exec'].includes(t.toolName) && !t.isError);
+assert.ok(reads.length, 'A successful read must prove persistence');
+assert.match(JSON.stringify(reads), /workspace-proof/);
+assert.match(JSON.stringify(reads), /338350/);
 assert.match(JSON.stringify(second.answer), /338[,.]?350/);
 const third = await turn('Use web_fetch to read https://raw.githubusercontent.com/cloudflare/agents/main/README.md . Briefly describe what project it documents, and cite the source URL.');
 const fetched = third.tools.find((t: any) => t.toolName === 'web_fetch');

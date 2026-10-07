@@ -54,6 +54,7 @@ try {
   result = await tool('exec', { command: "export default () => ({hostEnv:typeof process, key:typeof CLOUDFLARE_API_TOKEN})", cwd: '/workspace' });
   assert.match(JSON.stringify(result.content), /undefined/);
   result = await tool('exec', { command: "import {readFile} from 'node:fs/promises'; export default () => readFile('/etc/passwd','utf8')", cwd: '/workspace' });
+  assert.ok(result.isError, 'Nonzero JavaScript exits must be visible as tool errors');
   assert.match(JSON.stringify(result.content), /outside|escape|denied|error|must stay under/i);
   result = await tool('exec', { command: "export default async () => { try { await fetch('https://example.com'); return 'NETWORK_ALLOWED'; } catch { return 'NETWORK_BLOCKED'; } }", cwd: '/workspace' });
   assert.match(JSON.stringify(result.content), /NETWORK_BLOCKED/);
