@@ -10,12 +10,12 @@ export default {
     if (!env.DEMO_TOKEN) return Response.json({ error: 'Set DEMO_TOKEN with wrangler secret put DEMO_TOKEN before using the demo API' }, { status: 503 });
     if (request.headers.get('authorization') !== `Bearer ${env.DEMO_TOKEN}`) return Response.json({ error: 'Unauthorized' }, { status: 401 });
     const control = env.BILLING.get(env.BILLING.idFromName('project-global-v1'));
-    if (/^\/admin\/billing\/(status|stop|resume)$/.test(url.pathname)) {
+    if (/^\/admin\/billing\/(status|stop|resume|sessions|inspect)$/.test(url.pathname)) {
       const action = url.pathname.split('/').at(-1)!;
-      if ((action === 'status' && request.method !== 'GET') || (action !== 'status' && request.method !== 'POST')) return new Response('Method not allowed', { status: 405 });
+      if ((['status','sessions','inspect'].includes(action) && request.method !== 'GET') || (!['status','sessions','inspect'].includes(action) && request.method !== 'POST')) return new Response('Method not allowed', { status: 405 });
       const body = action === 'resume' ? await request.text() : undefined;
       if (body && body.length > 200) return new Response('Payload too large', { status: 413 });
-      return control.fetch('https://billing/' + action, { method: request.method, ...(body ? { body } : {}) });
+      return control.fetch('https://billing/' + action + (action === 'inspect' ? url.search : ''), { method: request.method, ...(body ? { body } : {}) });
     }
     // Reserve before resolving any agent: arbitrary agent names cannot multiply quotas.
     const permit = await control.fetch('https://billing/reserve', { method: 'POST', body: JSON.stringify({ requests: 1, storageBytes: 4096 }) });

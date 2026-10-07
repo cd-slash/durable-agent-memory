@@ -67,6 +67,11 @@ export class MemoryAgent extends DurableObject<Env> {
     const path = new URL(request.url).pathname;
     try {
       if (request.method === 'POST' && path === '/billing-stop') { await this.harness.session().abort(); return Response.json({ aborted: true }); }
+      if (request.method === 'GET' && path === '/billing-inspect') {
+        const messages = (await this.harness.messages()).flatMap(entry => entry.model ?? []);
+        const tools = messages.filter(message => message.role === 'toolResult' || (message.role === 'assistant' && message.content.some(block => block.type === 'toolCall'))).slice(-12);
+        return Response.json({ bootId: this.bootId, tools: tools.map(message => JSON.stringify(message).slice(0, 12000)) });
+      }
       await this.billing.assertRunning();
       if (request.method === 'GET' && path === '/events') return await operationStream(this, new URL(request.url).searchParams.get('operationId') ?? '');
       if (request.method === 'GET' && path === '/debug') return Response.json({ bootId: this.bootId, capabilities: { execution: this.env.LOADER ? 'isolated-javascript' : 'disabled-requires-worker-loader', workspace: '/workspace', webFetchHosts: this.webHosts, webSearch: false }, events: this.store.events(), nodes: this.store.nodes(), pending: this.memory.pending(), embeddingModels: this.sql.all('SELECT model,version,COUNT(*) AS count FROM hm_embeddings GROUP BY model,version'), localTest: this.env.LOCAL_TEST === 'true', transcript: await this.harness.messages(), epochs: this.sql.all('SELECT * FROM hm_epochs') });

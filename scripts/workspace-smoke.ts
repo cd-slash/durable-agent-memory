@@ -71,6 +71,13 @@ try {
   assert.ok(usage.body.reservations.some((r: any) => r.kind === 'executions' && r.used > 0));
   await api('submit', { message: 'slow bridge cancellation', operationId: crypto.randomUUID() });
   assert.equal((await admin('stop')).body.stopped, true);
+  const sessions = await fetch(`${base}/admin/billing/sessions`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) });
+  assert.ok((await sessions.json() as any).sessions.some((s: any) => s.name === agent));
+  const inspect = await fetch(`${base}/admin/billing/inspect?agent=${agent}`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) });
+  assert.equal(inspect.status, 200); assert.ok((await inspect.json() as any).tools.length <= 12);
+  const unknown = await fetch(`${base}/admin/billing/inspect?agent=never-created`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) });
+  assert.equal(unknown.status, 404); assert.equal((await admin('status')).body.stopped, true);
+
   const denied = await fetch(`${base}/api/${agent}/chat`, { method: 'POST', signal: AbortSignal.timeout(20000), headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ message: 'Should be blocked' }) });
   assert.equal(denied.status, 503);
   await stop(); await start();

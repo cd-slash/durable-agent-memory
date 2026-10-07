@@ -17,6 +17,12 @@ export class BillingControl extends DurableObject<{ AGENTS: DurableObjectNamespa
     const action = new URL(request.url).pathname;
     try {
       if (action === '/status' && request.method === 'GET') return Response.json(this.ledger.status());
+      if (action === '/sessions' && request.method === 'GET') return Response.json({ sessions: [...this.ctx.storage.sql.exec<{name: string;last_turn: number}>('SELECT name,last_turn FROM billing_agents ORDER BY last_turn DESC LIMIT 50')] });
+      if (action === '/inspect' && request.method === 'GET') {
+        const agent = new URL(request.url).searchParams.get('agent') ?? '';
+        if (!/^[a-zA-Z0-9_-]{1,64}$/.test(agent) || ![...this.ctx.storage.sql.exec('SELECT name FROM billing_known_agents WHERE name=?', agent)].length) return Response.json({ error: 'Unknown registered agent' }, { status: 404 });
+        return this.env.AGENTS.get(this.env.AGENTS.idFromName(agent)).fetch('https://agent/billing-inspect');
+      }
       if (request.method !== 'POST') return new Response('Not found', { status: 404 });
       if (action === '/stop') { const alreadyStopped = this.ledger.status().stopped; this.ledger.stop('Owner emergency stop'); if (!alreadyStopped) this.ctx.waitUntil(this.abortRegistered()); return Response.json({ ...this.ledger.status(), cancellation: 'bounded best-effort abort requested for registered agents' }); }
       if (action === '/resume') {
