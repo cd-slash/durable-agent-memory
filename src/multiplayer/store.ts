@@ -127,13 +127,19 @@ export class ProjectStore {
     if (!["viewer", "editor"].includes(role))
       throw new ProjectError(400, "Invalid project role");
     return this.sql.transaction(() => {
+      const memberId = `${actor.project}:${id}`;
+      const existing = this.sql.all(
+        "SELECT id FROM mp_members WHERE id=?",
+        memberId,
+      ).length;
       if (
+        !existing &&
         this.sql.all("SELECT id FROM mp_members WHERE project=?", actor.project)
           .length >= 8
       )
         throw new ProjectError(409, "Member count limit reached");
       this.sql.run(
-        "INSERT INTO mp_members(id,project,label,role,hash) VALUES(?,?,?,?,?)",
+        "INSERT INTO mp_members(id,project,label,role,hash) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET label=excluded.label,role=excluded.role,hash=excluded.hash,revoked=0",
         `${actor.project}:${id}`,
         actor.project,
         label,

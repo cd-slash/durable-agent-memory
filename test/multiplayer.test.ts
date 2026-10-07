@@ -135,10 +135,86 @@ it("ships parseable project UI code and keeps credential display explicit", asyn
   expect(multiplayerUI).not.toContain("localStorage");
 });
 
-it('preserves submitting member provenance and rejects cross-member operation replay',async()=>{
- const {sql,store,db}=sqlite();try{const memory=new HybridMemory({store,summarizer:new ExtractiveSummarizer()});
- const first=await prepareTurn(memory,sql,'My database preference','actor-turn',{},'shared project','alpha:alice');expect(JSON.stringify(first.input)).toContain('alpha:alice');
- expect(await prepareTurn(memory,sql,'My database preference','actor-turn',{},'changed shared project','alpha:alice')).toEqual(first);
- await expect(prepareTurn(memory,sql,'My database preference','actor-turn',{},'shared project','alpha:bob')).rejects.toThrow('different project member');
- }finally{db.close();}
+it("preserves submitting member provenance and rejects cross-member operation replay", async () => {
+  const { sql, store, db } = sqlite();
+  try {
+    const memory = new HybridMemory({
+      store,
+      summarizer: new ExtractiveSummarizer(),
+    });
+    const first = await prepareTurn(
+      memory,
+      sql,
+      "My database preference",
+      "actor-turn",
+      {},
+      "shared project",
+      "alpha:alice",
+    );
+    expect(JSON.stringify(first.input)).toContain("alpha:alice");
+    expect(
+      await prepareTurn(
+        memory,
+        sql,
+        "My database preference",
+        "actor-turn",
+        {},
+        "changed shared project",
+        "alpha:alice",
+      ),
+    ).toEqual(first);
+    await expect(
+      prepareTurn(
+        memory,
+        sql,
+        "My database preference",
+        "actor-turn",
+        {},
+        "shared project",
+        "alpha:bob",
+      ),
+    ).rejects.toThrow("different project member");
+  } finally {
+    db.close();
+  }
+});
+
+it("validates signed project credentials offline and rejects forgery, expiration and owner-key rotation", async () => {
+  const { issueCredential, verifyCredential } =
+    await import("../src/multiplayer/credentials");
+  const now = Date.now();
+  const token = await issueCredential("alpha", "fixture-owner-secret", now);
+  expect(await verifyCredential(token, "fixture-owner-secret", now)).toBe(true);
+  expect(await verifyCredential(token, "changed-owner-secret", now)).toBe(
+    false,
+  );
+  const parts = token.split(".");
+  expect(
+    await verifyCredential(
+      parts[0] + "." + parts[1].slice(0, -1) + "a." + parts[2],
+      "fixture-owner-secret",
+      now,
+    ),
+  ).toBe(false);
+  expect(
+    await verifyCredential(token, "fixture-owner-secret", now + 31 * 86400000),
+  ).toBe(false);
+  expect(
+    await verifyCredential("random token", "fixture-owner-secret", now),
+  ).toBe(false);
+});
+it("rotates credentials for an existing member without consuming additional member slots or changing identity", () => {
+  const { teams, owner, db } = fixture();
+  try {
+    teams.member(owner, "editor", "Editor", "editor", "replacement-hash");
+    expect(() => teams.authorize("alpha", "editor-hash")).toThrow(
+      "access denied",
+    );
+    expect(teams.authorize("alpha", "replacement-hash").member).toBe(
+      "alpha:editor",
+    );
+    expect(teams.board("alpha").members).toHaveLength(2);
+  } finally {
+    db.close();
+  }
 });

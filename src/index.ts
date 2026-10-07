@@ -1,3 +1,4 @@
+import { verifyCredential } from './multiplayer/credentials';
 import { multiplayerUI } from './multiplayer/ui';
 import type { Env } from './agent';
 import { sha256 } from './core/hierarchy';
@@ -14,6 +15,7 @@ export default {
     const credential = request.headers.get('authorization')?.match(/^Bearer (.{1,256})$/)?.[1];
     if (!credential) return Response.json({ error: 'Unauthorized' }, { status: 401 });
     const owner = credential === env.DEMO_TOKEN;
+    if (!owner && !await verifyCredential(credential, env.DEMO_TOKEN)) return Response.json({error:'Unauthorized'},{status:401});
     let member = 'owner';
     const hash = owner ? '' : await sha256(credential);
     const control = env.BILLING.get(env.BILLING.idFromName('project-global-v1'));

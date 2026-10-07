@@ -1,3 +1,4 @@
+import { issueCredential } from "./credentials";
 import type { Env } from "../agent";
 import { sha256 } from "../core/hierarchy";
 import type { TeamTask, Actor } from "./store";
@@ -39,13 +40,28 @@ export async function projectRoutes(
     });
     if (!auth.ok) return auth;
   }
-  if (match?.[2] === 'revoke') {
-    if (!owner) return Response.json({error:'Owner access required'},{status:403});
-    if (request.method !== 'POST') return new Response('Method not allowed',{status:405});
-    const raw = await request.text(); if (new TextEncoder().encode(raw).length > 500) return new Response('Payload too large',{status:413});
-    let input: {id?:unknown};try{input=JSON.parse(raw);}catch{return new Response('Invalid JSON',{status:400});}
-    if(typeof input?.id !== 'string' || input.id.length > 90) return new Response('Invalid member id',{status:400});
-    return teamCall(control,'revoke',{project:match[1],owner,hash,id:input.id});
+  if (match?.[2] === "revoke") {
+    if (!owner)
+      return Response.json({ error: "Owner access required" }, { status: 403 });
+    if (request.method !== "POST")
+      return new Response("Method not allowed", { status: 405 });
+    const raw = await request.text();
+    if (new TextEncoder().encode(raw).length > 500)
+      return new Response("Payload too large", { status: 413 });
+    let input: { id?: unknown };
+    try {
+      input = JSON.parse(raw);
+    } catch {
+      return new Response("Invalid JSON", { status: 400 });
+    }
+    if (typeof input?.id !== "string" || input.id.length > 90)
+      return new Response("Invalid member id", { status: 400 });
+    return teamCall(control, "revoke", {
+      project: match[1],
+      owner,
+      hash,
+      id: input.id,
+    });
   }
   const permit = await control.fetch("https://billing/reserve", {
     method: "POST",
@@ -77,7 +93,7 @@ export async function projectRoutes(
   if (request.method !== "POST")
     return new Response("Method not allowed", { status: 405 });
   if (action === "members") {
-    const token = `mp_${crypto.randomUUID()}_${crypto.randomUUID()}`;
+    const token = await issueCredential(match![1], env.DEMO_TOKEN!);
     const r = await teamCall(control, "member", {
       ...auth,
       id: body.id,
